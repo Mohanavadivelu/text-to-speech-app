@@ -66,27 +66,51 @@ pyside6_app/
 
 ## UI Elements Details
 
-Below is a breakdown of the specific widgets found in `ui/widgets/`. For the exact HTML structure and CSS classes to be replicated in PySide6, click the reference links below to open the extracted prototype files.
+Below is a breakdown of the specific widgets found in `ui/widgets/`. HTML source files are linked for exact structure and CSS classes to replicate in PySide6.
 
 ### 1. `titlebar.py`
 A custom, frameless title bar that allows window dragging and displays application context.
-* **Reference UI:** [`design/titlebar.html`](design/titlebar.html)
+
+![Title Bar](design/screenshots/titlebar.png)
+
+* **Source:** [`design/titlebar.html`](design/titlebar.html)
 
 ### 2. `text_input.py`
 The primary text entry area where users type or paste the script to be spoken. Includes the embedded generation button.
-* **Reference UI:** [`design/text_panel.html`](design/text_panel.html)
+
+![Text Panel](design/screenshots/text_panel.png)
+
+* **Source:** [`design/text_panel.html`](design/text_panel.html)
 
 ### 3. `settings_panel.py`
 The right-side dock containing all configuration options for the voice model.
-* **Reference UI:** [`design/settings_panel.html`](design/settings_panel.html)
+
+![Settings Panel](design/screenshots/settings_panel.png)
+
+* **Source:** [`design/settings_panel.html`](design/settings_panel.html)
 
 ### 4. `audio_player.py`
 A bottom-anchored, DAW-style media player spanning the full width, featuring a dense waveform view.
-* **Reference UI:** [`design/audio_player.html`](design/audio_player.html)
+
+![Audio Player](design/screenshots/audio_player.png)
+
+* **Source:** [`design/audio_player.html`](design/audio_player.html)
 
 ### 5. `statusbar.py`
 A thin strip at the very bottom of the window indicating system status.
-* **Reference UI:** [`design/statusbar.html`](design/statusbar.html)
+
+![Status Bar](design/screenshots/statusbar.png)
+
+* **Source:** [`design/statusbar.html`](design/statusbar.html)
+
+---
+
+### UI State Previews
+Full-window previews of application states (generating, error, ready).
+
+![State Previews](design/screenshots/state_previews.png)
+
+* **Source:** [`design/state_previews.html`](design/state_previews.html)
 
 ---
 
