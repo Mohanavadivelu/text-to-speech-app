@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kokoro TTS — UI Preview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0f0f13;
+    --surface:     #1a1a24;
+    --surface2:    #22222f;
+    --surface3:    #2a2a3a;
+    --border:      #2e2e42;
+    --border2:     #3a3a52;
+    --accent:      #7c5cbf;
+    --accent-h:    #9370db;
+    --accent-glow: rgba(124,92,191,0.35);
+    --play:        #1db97a;
+    --play-h:      #22d68e;
+    --play-glow:   rgba(29,185,122,0.35);
+    --stop:        #e05252;
+    --stop-h:      #f06060;
+    --stop-glow:   rgba(224,82,82,0.35);
+    --save:        #3b8eea;
+    --save-h:      #5aa3f5;
+    --save-glow:   rgba(59,142,234,0.35);
+    --text:        #e8e8f0;
+    --text2:       #9898b8;
+    --text3:       #5a5a7a;
+    --ok:          #4ade80;
+    --busy:        #f59e0b;
+    --err:         #f87171;
+    --progress:    #7c5cbf;
+    --radius:      12px;
+    --radius-sm:   8px;
+    --radius-pill: 50px;
+  }
+
+  body {
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    background: #07070d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  /* ── App Window ── */
+  .app-window {
+    width: 980px;
+    background: var(--bg);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Title Bar ── */
+  .titlebar {
+    background: linear-gradient(135deg, #13131e 0%, #1a1a2e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .app-icon {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--accent), #5b3fa0);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    box-shadow: 0 4px 12px var(--accent-glow);
+  }
+
+  .app-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.3px;
+  }
+
+  .app-subtitle {
+    font-size: 11px;
+    color: var(--text3);
+    font-weight: 400;
+  }
+
+  .titlebar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .version-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--text3);
+    font-weight: 500;
+  }
+
+  .model-badge {
+    background: linear-gradient(135deg, rgba(124,92,191,0.2), rgba(91,63,160,0.2));
+    border: 1px solid rgba(124,92,191,0.4);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--accent-h);
+    font-weight: 500;
+  }
+
+  /* Window controls */
+  .win-controls {
+    display: flex;
+    gap: 8px;
+  }
+  .win-btn {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .win-close  { background: #ff5f57; }
+  .win-min    { background: #febc2e; }
+  .win-max    { background: #28c840; }
+
+  /* ── Body ── */
+  .body {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 16px;
+    padding: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-icon {
+    font-size: 14px;
+    opacity: 0.8;
+  }
+
+  .card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  /* ── Text Panel ── */
+  .text-panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .text-area-wrap {
+    flex: 1;
+    padding: 12px;
+    position: relative;
+  }
+
+  .text-area {
+    width: 100%;
+    height: 200px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 13px;
+    color: var(--text);
+    resize: none;
+    outline: none;
+    line-height: 1.7;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .text-area:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  .text-area::placeholder { color: var(--text3); }
+
+  .char-count {
+    text-align: right;
+    font-size: 11px;
+    color: var(--text3);
+    padding: 4px 12px 8px;
+  }
+
+  /* ── Waveform ── */
+  .waveform-section {
+    padding: 0 12px 12px;
+  }
+
+  .waveform-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .waveform-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 16px;
+    gap: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .waveform-bar {
+    width: 3px;
+    border-radius: 2px;
+    background: linear-gradient(to top, var(--accent), var(--accent-h));
+    opacity: 0.85;
+    animation: wave 1.2s ease-in-out infinite alternate;
+  }
+
+  @keyframes wave {
+    from { transform: scaleY(0.3); }
+    to   { transform: scaleY(1); }
+  }
+
+  .waveform-empty {
+    color: var(--text3);
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .waveform-empty-icon { font-size: 24px; opacity: 0.4; }
+
+  /* Duration badge */
+  .duration-badge {
+    position: absolute;
+    right: 10px;
+    top: 8px;
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 2px 8px;
+    font-size: 10px;
+    color: var(--text2);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Settings Panel ── */
+  .settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .settings-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    flex: 1;
+  }
+
+  .setting-group { display: flex; flex-direction: column; gap: 6px; }
+
+  .setting-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .setting-label-icon { font-size: 13px; }
+
+  /* Combobox */
+  .combo {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    user-select: none;
+  }
+
+  .combo:hover {
+    border-color: var(--border2);
+    box-shadow: 0 0 0 3px rgba(124,92,191,0.1);
+  }
+
+  .combo-arrow { color: var(--text3); font-size: 10px; }
+
+  .combo-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .voice-badge {
+    background: linear-gradient(135deg, rgba(124,92,191,0.25), rgba(91,63,160,0.25));
+    border: 1px solid rgba(124,92,191,0.3);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: var(--accent-h);
+    font-weight: 600;
+  }
+
+  /* Speed slider */
+  .speed-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .speed-min, .speed-max {
+    font-size: 10px;
+    color: var(--text3);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .slider-track {
+    flex: 1;
+    height: 4px;
+    background: var(--surface3);
+    border-radius: 2px;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .slider-fill {
+    height: 100%;
+    width: 42%;
+    background: linear-gradient(to right, var(--accent), var(--accent-h));
+    border-radius: 2px;
+  }
+
+  .slider-thumb {
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 42%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 3px var(--accent-glow);
+    cursor: grab;
+  }
+
+  .speed-value {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-h);
+    letter-spacing: -0.5px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .speed-unit {
+    font-size: 12px;
+    color: var(--text3);
+    font-weight: 400;
+    text-align: center;
+    margin-top: -4px;
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 -14px;
+  }
+
+  /* Output info */
+  .output-info {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .output-icon {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, rgba(29,185,122,0.2), rgba(22,163,100,0.2));
+    border: 1px solid rgba(29,185,122,0.3);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .output-details { flex: 1; min-width: 0; }
+
+  .output-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .output-meta {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 2px;
+  }
+
+  .output-check { color: var(--ok); font-size: 14px; }
+
+  /* ── Action Bar ── */
+  .action-bar {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: var(--radius-pill);
+    border: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+  }
+
+  .btn-icon { font-size: 14px; }
+
+  .btn-generate {
+    background: linear-gradient(135deg, var(--accent), #5b3fa0);
+    color: white;
+    box-shadow: 0 4px 16px var(--accent-glow);
+  }
+
+  .btn-generate:hover {
+    background: linear-gradient(135deg, var(--accent-h), #6b4fb0);
+    box-shadow: 0 6px 20px var(--accent-glow);
+    transform: translateY(-1px);
+  }
+
+  .btn-play {
+    background: linear-gradient(135deg, var(--play), #17a36b);
+    color: white;
+    box-shadow: 0 4px 16px var(--play-glow);
+  }
+
+  .btn-play:hover {
+    background: linear-gradient(135deg, var(--play-h), #1db97a);
+    box-shadow: 0 6px 20px var(--play-glow);
+    transform: translateY(-1px);
+  }
+
+  .btn-stop {
+    background: var(--surface2);
+    color: var(--stop);
+    border: 1px solid rgba(224,82,82,0.3);
+  }
+
+  .btn-stop:hover {
+    background: rgba(224,82,82,0.1);
+    border-color: var(--stop);
+    box-shadow: 0 4px 16px var(--stop-glow);
+    transform: translateY(-1px);
+  }
+
+  .btn-save {
+    background: var(--surface2);
+    color: var(--save);
+    border: 1px solid rgba(59,142,234,0.3);
+    margin-left: auto;
+  }
+
+  .btn-save:hover {
+    background: rgba(59,142,234,0.1);
+    border-color: var(--save);
+    box-shadow: 0 4px 16px var(--save-glow);
+    transform: translateY(-1px);
+  }
+
+  .btn-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ── Progress Bar ── */
+  .progress-section {
+    padding: 0 16px 0;
+    flex-shrink: 0;
+  }
+
+  .progress-track {
+    height: 3px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(to right, var(--accent), var(--accent-h));
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+
+  /* ── Status Bar ── */
+  .statusbar {
+    height: 28px;
+    background: linear-gradient(135deg, #13131e, #1a1a2e);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .status-text { color: var(--text2); font-weight: 500; }
+
+  .status-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--border);
+  }
+
+  .status-right { margin-left: auto; }
+
+  /* ── Tabs (for future) ── */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .tab {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab:hover:not(.active) { color: var(--text2); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+  /* ── Tooltip ── */
+  .tooltip-note {
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--text3);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.5;
+  }
+
+  .tooltip-note-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Page label ── */
+  .page-label {
+    text-align: center;
+    color: var(--text3);
+    font-size: 12px;
+    margin-bottom: 16px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Waveform bars generation ── */
+  .waveform-bars {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 100%;
+    padding: 8px 0;
+  }
+
+</style>
+</head>
+<body>
+
+<div style="width:100%; max-width:1020px;">
+  <p class="page-label">🎨 Kokoro TTS — Production UI Preview &nbsp;·&nbsp; Studio Dark Theme</p>
+
+  <div class="app-window">
+
+    <!-- Title Bar -->
+    <div class="titlebar">
+      <div class="titlebar-left">
+        <div class="win-controls">
+          <div class="win-btn win-close"></div>
+          <div class="win-btn win-min"></div>
+          <div class="win-btn win-max"></div>
+        </div>
+        <div class="app-icon">🎙</div>
+        <div>
+          <div class="app-title">Kokoro TTS</div>
+          <div class="app-subtitle">Text-to-Speech Studio</div>
+        </div>
+      </div>
+      <div class="titlebar-right">
+        <span class="model-badge">⚡ hexgrad/Kokoro-82M</span>
+        <span class="version-badge">v1.0</span>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active">📝 Generate</div>
+      <div class="tab">📂 History</div>
+      <div class="tab">⚙️ Settings</div>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+
+      <!-- Left: Text + Waveform -->
+      <div style="display:flex; flex-direction:column; gap:12px;">
+
+        <!-- Text Input Card -->
+        <div class="card text-panel" style="flex:1;">
+          <div class="card-header">
+            <span class="card-icon">📝</span>
+            <span class="card-title">Text Input</span>
+          </div>
+          <div class="text-area-wrap" style="flex:1; display:flex; flex-direction:column;">
+            <textarea class="text-area" style="flex:1; height:auto; min-height:160px;"
+              placeholder="Type or paste your text here…&#10;&#10;Kokoro TTS will convert it to natural-sounding speech using the selected voice and language.">The quick brown fox jumps over the lazy dog. This is a demonstration of the Kokoro TTS system with a production-ready interface.</textarea>
+          </div>
+          <div class="char-count">Characters: 148 &nbsp;·&nbsp; ~4 seconds estimated</div>
+        </div>
+
+        <!-- Waveform Card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">〰️</span>
+            <span class="card-title">Waveform Preview</span>
+          </div>
+          <div style="padding: 12px;">
+            <div class="waveform-box">
+              <div class="duration-badge">0:04.2</div>
+              <div class="waveform-bars" id="waveform"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: Settings -->
+      <div class="card settings-panel">
+        <div class="card-header">
+          <span class="card-icon">🎛️</span>
+          <span class="card-title">Voice Settings</span>
+        </div>
+
+        <div class="settings-body">
+
+          <!-- Language -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">🌐</span> Language
+            </div>
+            <div class="combo">
+              <div class="combo-value">
+                <span>🇺🇸</span>
+                <span>American English</span>
+              </div>
+              <span class="combo-arrow">▼</span>
+            </div>
+          </div>
+
+          <!-- Voice -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">🎤</span> Voice
+            </div>
+            <div class="combo">
+              <div class="combo-value">
+                <span>♀</span>
+                <span>Heart</span>
+                <span class="voice-badge">A ❤️</span>
+              </div>
+              <span class="combo-arrow">▼</span>
+            </div>
+          </div>
+
+          <!-- Speed -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">⚡</span> Speed
+            </div>
+            <div style="text-align:center; margin-bottom:6px;">
+              <div class="speed-value">1.0</div>
+              <div class="speed-unit">× normal speed</div>
+            </div>
+            <div class="speed-row">
+              <span class="speed-min">0.5×</span>
+              <div class="slider-track">
+                <div class="slider-fill"></div>
+                <div class="slider-thumb"></div>
+              </div>
+              <span class="speed-max">2.0×</span>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- Output -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">📁</span> Last Output
+            </div>
+            <div class="output-info">
+              <div class="output-icon">🔊</div>
+              <div class="output-details">
+                <div class="output-name">output.wav</div>
+                <div class="output-meta">24 kHz · WAV · 4.2s</div>
+              </div>
+              <span class="output-check">✅</span>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- Info note -->
+          <div class="tooltip-note">
+            <span class="tooltip-note-icon">💡</span>
+            <span>First launch downloads the Kokoro model (~330 MB). All subsequent runs are fully offline.</span>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="progress-section">
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="action-bar">
+      <button class="btn btn-generate">
+        <span class="btn-icon">✨</span> Generate Speech
+      </button>
+      <button class="btn btn-play">
+        <span class="btn-icon">▶</span> Play
+      </button>
+      <button class="btn btn-stop">
+        <span class="btn-icon">■</span> Stop
+      </button>
+      <button class="btn btn-save">
+        <span class="btn-icon">💾</span> Save As…
+      </button>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="statusbar">
+      <div class="status-item">
+        <div class="status-dot"></div>
+        <span class="status-text">Ready</span>
+      </div>
+      <div class="status-sep"></div>
+      <div class="status-item">🖥️ CUDA · RTX 3050 Ti</div>
+      <div class="status-sep"></div>
+      <div class="status-item">🎙 af_heart</div>
+      <div class="status-item status-right">
+        <span>Kokoro TTS Studio</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- State Previews -->
+  <div style="margin-top: 40px; display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+
+    <!-- Generating State -->
+    <div>
+      <p class="page-label" style="margin-bottom:10px;">⏳ State: Generating…</p>
+      <div class="app-window" style="border-radius:12px;">
+        <div class="action-bar" style="border-top:none; border-bottom:1px solid var(--border);">
+          <button class="btn btn-generate btn-disabled">
+            <span class="btn-icon">⏳</span> Generating…
+          </button>
+          <button class="btn btn-play btn-disabled"><span class="btn-icon">▶</span> Play</button>
+          <button class="btn btn-stop btn-disabled"><span class="btn-icon">■</span> Stop</button>
+          <button class="btn btn-save btn-disabled"><span class="btn-icon">💾</span> Save As…</button>
+        </div>
+        <div class="progress-section" style="padding:8px 16px;">
+          <div class="progress-track">
+            <div class="progress-fill" style="width:60%; animation: progressAnim 1.5s ease-in-out infinite alternate;"></div>
+          </div>
+        </div>
+        <div class="statusbar">
+          <div class="status-item">
+            <div class="status-dot" style="background:var(--busy); box-shadow:0 0 6px var(--busy);"></div>
+            <span class="status-text" style="color:var(--busy);">Generating audio…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error State -->
+    <div>
+      <p class="page-label" style="margin-bottom:10px;">❌ State: Error</p>
+      <div class="app-window" style="border-radius:12px; border-color:rgba(224,82,82,0.3);">
+        <div class="action-bar" style="border-top:none; border-bottom:1px solid var(--border);">
+          <button class="btn btn-generate">
+            <span class="btn-icon">✨</span> Generate Speech
+          </button>
+          <button class="btn btn-play btn-disabled"><span class="btn-icon">▶</span> Play</button>
+          <button class="btn btn-stop btn-disabled"><span class="btn-icon">■</span> Stop</button>
+          <button class="btn btn-save btn-disabled"><span class="btn-icon">💾</span> Save As…</button>
+        </div>
+        <div class="progress-section" style="padding:8px 16px;">
+          <div class="progress-track">
+            <div class="progress-fill" style="width:0%;"></div>
+          </div>
+        </div>
+        <div class="statusbar" style="background:linear-gradient(135deg,#1e0f0f,#2a1010);">
+          <div class="status-item">
+            <div class="status-dot" style="background:var(--err); box-shadow:0 0 6px var(--err); animation:none;"></div>
+            <span class="status-text" style="color:var(--err);">Error: Model failed to load</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Color Palette Reference -->
+  <div style="margin-top:40px;">
+    <p class="page-label" style="margin-bottom:16px;">🎨 Color Palette — Studio Dark</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px;">
+      <div style="background:#0f0f13; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#9898b8; margin-bottom:4px;">Background</div>
+        <div style="font-size:12px; color:#e8e8f0; font-family:monospace;">#0f0f13</div>
+      </div>
+      <div style="background:#1a1a24; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#9898b8; margin-bottom:4px;">Surface</div>
+        <div style="font-size:12px; color:#e8e8f0; font-family:monospace;">#1a1a24</div>
+      </div>
+      <div style="background:#7c5cbf; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Accent</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#7c5cbf</div>
+      </div>
+      <div style="background:#1db97a; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Play</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#1db97a</div>
+      </div>
+      <div style="background:#e05252; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Stop</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#e05252</div>
+      </div>
+      <div style="background:#3b8eea; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Save</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#3b8eea</div>
+      </div>
+      <div style="background:#4ade80; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#0f0f13; margin-bottom:4px;">Status OK</div>
+        <div style="font-size:12px; color:#0f0f13; font-family:monospace;">#4ade80</div>
+      </div>
+      <div style="background:#f59e0b; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#0f0f13; margin-bottom:4px;">Busy</div>
+        <div style="font-size:12px; color:#0f0f13; font-family:monospace;">#f59e0b</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+@keyframes progressAnim {
+  from { width: 30%; }
+  to   { width: 80%; }
+}
+</style>
+
+<script>
+  // Generate waveform bars
+  const waveform = document.getElementById('waveform');
+  const heights = [
+    20,35,55,70,85,90,75,60,80,95,85,70,55,40,60,75,90,80,65,50,
+    70,85,75,60,45,65,80,70,55,40,60,75,65,50,35,55,70,60,45,30,
+    50,65,55,40,25,45,60,50,35,20,40,55,45,30,15,35,50,40,25,10
+  ];
+  heights.forEach((h, i) => {
+    const bar = document.createElement('div');
+    bar.className = 'waveform-bar';
+    bar.style.height = h + '%';
+    bar.style.animationDelay = (i * 0.04) + 's';
+    bar.style.animationDuration = (0.8 + Math.random() * 0.8) + 's';
+    waveform.appendChild(bar);
+  });
+
+  // Button hover interactions
+  document.querySelectorAll('.btn:not(.btn-disabled)').forEach(btn => {
+    btn.addEventListener('mouseenter', () => {
+      btn.style.transform = 'translateY(-2px)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = '';
+    });
+  });
+</script>
+</body>
+</html>
