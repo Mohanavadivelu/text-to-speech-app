@@ -1,0 +1,34 @@
+# Virtual environment
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+build_tmp/
+*.spec
+
+# Output files
+output.wav
+*.wav
+*.mp3
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Hugging Face model cache (large, downloaded at runtime)
+.cache/

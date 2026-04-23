@@ -896,7 +896,7 @@ class KokoroApp:
 
         except Exception as exc:
             log.exception("Generation failed: %s", exc)
-            self.root.after(0, lambda: self._on_generate_error(str(exc)))
+            self.root.after(0, lambda msg=str(exc): self._on_generate_error(msg))
 
     def _on_generate_done(self, path: str, voice_id: str):
         log.info("Generation done — %s", os.path.basename(path))
