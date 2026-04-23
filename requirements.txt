@@ -2,3 +2,4 @@ numpy>=2.0
 soundfile
 sounddevice
 kokoro
+customtkinter>=5.2.0
