@@ -226,73 +226,219 @@
     padding: 4px 12px 8px;
   }
 
-  /* ── Waveform ── */
-  .waveform-section {
-    padding: 0 12px 12px;
+  /* ── Audio Player (Waveform) ── */
+  .audio-player {
+    background: #0a0a0f;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
-  .waveform-label {
+  .player-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: #111116;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .player-title {
     font-size: 11px;
-    font-weight: 600;
-    color: var(--text3);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--text2);
     display: flex;
     align-items: center;
     gap: 6px;
   }
 
-  .waveform-box {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    height: 80px;
+  .player-top-icons {
+    display: flex;
+    gap: 12px;
+    color: var(--text3);
+    font-size: 10px;
+  }
+
+  .player-main {
+    display: flex;
+    padding: 12px 16px;
+    gap: 20px;
+    align-items: center;
+    background: #0a0a0f;
+  }
+
+  .player-time-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 65px;
+  }
+
+  .player-current-time {
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+    letter-spacing: -1px;
+  }
+
+  .player-total-time {
+    font-size: 12px;
+    color: var(--text3);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  .player-waveform-container {
+    flex: 1;
+    height: 50px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .player-file-info {
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 6px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .player-file-badges {
+    display: flex;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text3);
+    font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .player-waveform-track {
+    flex: 1;
+    background: #15151c;
+    border-radius: 2px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 0 16px;
-    gap: 2px;
     overflow: hidden;
     position: relative;
   }
 
-  .waveform-bar {
-    width: 3px;
-    border-radius: 2px;
-    background: linear-gradient(to top, var(--accent), var(--accent-h));
-    opacity: 0.85;
-    animation: wave 1.2s ease-in-out infinite alternate;
-  }
-
-  @keyframes wave {
-    from { transform: scaleY(0.3); }
-    to   { transform: scaleY(1); }
-  }
-
-  .waveform-empty {
-    color: var(--text3);
-    font-size: 12px;
+  .player-waveform-bars {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    height: 100%;
+    width: 100%;
+  }
+
+  .player-bar {
+    flex: 1;
+    background: var(--save);
+    opacity: 0.9;
+    min-width: 1px;
+    border-radius: 1px;
+  }
+
+  .player-bar.played {
+    background: #60a5fa;
+    opacity: 1;
+  }
+  
+  .player-bar.unplayed {
+    background: #1e3a8a;
+  }
+
+  .player-progress-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 35%;
+    background: rgba(255,255,255,0.05);
+    border-right: 1px solid rgba(255,255,255,0.3);
+    pointer-events: none;
+  }
+
+  .player-controls {
+    background: #111116;
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .player-btn {
+    background: transparent;
+    border: none;
+    color: var(--text2);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  .player-btn:hover {
+    background: var(--surface2);
+    color: white;
+  }
+
+  .player-bottom-info {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text3);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-left: 8px;
+  }
+
+  .player-volume {
+    margin-left: auto;
+    display: flex;
     align-items: center;
     gap: 6px;
   }
 
-  .waveform-empty-icon { font-size: 24px; opacity: 0.4; }
-
-  /* Duration badge */
-  .duration-badge {
-    position: absolute;
-    right: 10px;
-    top: 8px;
+  .player-volume-slider {
+    width: 60px;
+    height: 3px;
     background: var(--surface3);
-    border: 1px solid var(--border2);
-    border-radius: 20px;
-    padding: 2px 8px;
-    font-size: 10px;
-    color: var(--text2);
-    font-family: 'JetBrains Mono', monospace;
+    border-radius: 2px;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .player-volume-fill {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 70%;
+    background: var(--save);
+    border-radius: 2px;
+  }
+  
+  .player-volume-thumb {
+    position: absolute;
+    top: 50%;
+    left: 70%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
   }
 
   /* ── Settings Panel ── */
@@ -561,26 +707,55 @@
     pointer-events: none;
   }
 
-  /* ── Progress Bar ── */
-  .progress-section {
-    padding: 0 16px 0;
-    flex-shrink: 0;
-  }
-
-  .progress-track {
-    height: 3px;
-    background: var(--surface2);
-    border-radius: 2px;
+  /* ── Button Progress ── */
+  .btn-generate.generating {
+    position: relative;
     overflow: hidden;
+    background: var(--surface2);
+    box-shadow: none;
+    border: 1px solid var(--border);
+    color: var(--text);
   }
 
-  .progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(to right, var(--accent), var(--accent-h));
-    border-radius: 2px;
-    transition: width 0.3s;
+  .btn-progress-fill {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 60%;
+    background: linear-gradient(135deg, rgba(124,92,191,0.5), rgba(91,63,160,0.5));
+    z-index: 0;
+    animation: progressAnim 1.5s ease-in-out infinite alternate;
   }
+
+  .btn-generate.generating .btn-icon,
+  .btn-generate.generating span:not(.btn-progress-fill) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Error Popup ── */
+  .error-popup {
+    position: absolute;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1010;
+    border: 1px solid rgba(248,113,113,0.3);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    color: var(--err);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(248,113,113,0.1);
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;
+  }
+
+  .error-popup-icon {
+    font-size: 16px;
+  }
+
 
   /* ── Status Bar ── */
   .statusbar {
@@ -622,6 +797,19 @@
     width: 1px;
     height: 14px;
     background: var(--border);
+  }
+
+  .player-waveform-track { cursor: crosshair; }
+  .player-waveform-track:hover::after {
+    content: '';
+    position: absolute;
+    left: 45%; /* Example scrub position */
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--primary);
+    box-shadow: 0 0 4px var(--primary);
+    pointer-events: none;
   }
 
   .status-right { margin-left: auto; }
@@ -687,14 +875,6 @@
     letter-spacing: 0.5px;
   }
 
-  /* ── Waveform bars generation ── */
-  .waveform-bars {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    height: 100%;
-    padding: 8px 0;
-  }
 
 </style>
 </head>
@@ -725,12 +905,7 @@
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="tabs">
-      <div class="tab active">📝 Generate</div>
-      <div class="tab">📂 History</div>
-      <div class="tab">⚙️ Settings</div>
-    </div>
+
 
     <!-- Body -->
     <div class="body">
@@ -748,30 +923,27 @@
             <textarea class="text-area" style="flex:1; height:auto; min-height:160px;"
               placeholder="Type or paste your text here…&#10;&#10;Kokoro TTS will convert it to natural-sounding speech using the selected voice and language.">The quick brown fox jumps over the lazy dog. This is a demonstration of the Kokoro TTS system with a production-ready interface.</textarea>
           </div>
-          <div class="char-count">Characters: 148 &nbsp;·&nbsp; ~4 seconds estimated</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding: 0 12px 12px;">
+            <div class="char-count" style="padding:0; text-align:left;">Characters: 148 &nbsp;·&nbsp; ~4 seconds estimated</div>
+            <button class="btn btn-generate" style="padding: 8px 16px; display: flex; align-items: center; gap: 8px;">
+              <div><span class="btn-icon">✨</span> Generate Speech</div>
+              <div style="opacity: 0.5; font-size: 10px; font-weight: 500; background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px;">Ctrl+Enter</div>
+            </button>
+          </div>
         </div>
 
-        <!-- Waveform Card -->
-        <div class="card">
-          <div class="card-header">
-            <span class="card-icon">〰️</span>
-            <span class="card-title">Waveform Preview</span>
-          </div>
-          <div style="padding: 12px;">
-            <div class="waveform-box">
-              <div class="duration-badge">0:04.2</div>
-              <div class="waveform-bars" id="waveform"></div>
-            </div>
-          </div>
-        </div>
+
 
       </div>
 
       <!-- Right: Settings -->
       <div class="card settings-panel">
-        <div class="card-header">
-          <span class="card-icon">🎛️</span>
-          <span class="card-title">Voice Settings</span>
+        <div class="card-header" style="justify-content: space-between;">
+          <div>
+            <span class="card-icon">🎛️</span>
+            <span class="card-title">Voice Settings</span>
+          </div>
+          <button class="player-btn" style="width: 24px; height: 24px; font-size: 12px; background: transparent; padding: 0;" title="Collapse Panel">▶️</button>
         </div>
 
         <div class="settings-body">
@@ -795,13 +967,16 @@
             <div class="setting-label">
               <span class="setting-label-icon">🎤</span> Voice
             </div>
-            <div class="combo">
+            <div class="combo" style="padding-right: 8px;">
               <div class="combo-value">
                 <span>♀</span>
                 <span>Heart</span>
                 <span class="voice-badge">A ❤️</span>
               </div>
-              <span class="combo-arrow">▼</span>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <button class="player-btn" style="width: 22px; height: 22px; font-size: 10px; background: var(--surface3); border-radius: 4px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.2);" title="Preview Voice 'Heart'">▶</button>
+                <span class="combo-arrow">▼</span>
+              </div>
             </div>
           </div>
 
@@ -823,6 +998,23 @@
               <span class="speed-max">2.0×</span>
             </div>
           </div>
+          <!-- Advanced Settings Accordion -->
+          <details class="advanced-settings" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <summary style="font-size: 11px; color: var(--text3); cursor: pointer; user-select: none; font-weight: 500; display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 10px;">▶</span> Advanced Settings
+            </summary>
+            <div style="padding-top: 12px; display: flex; flex-direction: column; gap: 12px;">
+              <!-- Pitch -->
+              <div class="setting-group" style="margin: 0;">
+                <div class="setting-label" style="margin-bottom: 6px;"><span class="setting-label-icon">🎵</span> Pitch</div>
+                <div class="speed-row">
+                  <span class="speed-min">-5</span>
+                  <div class="slider-track"><div class="slider-fill" style="width: 50%;"></div><div class="slider-thumb" style="left: 50%;"></div></div>
+                  <span class="speed-max">+5</span>
+                </div>
+              </div>
+            </div>
+          </details>
 
           <div class="divider"></div>
 
@@ -843,38 +1035,67 @@
 
           <div class="divider"></div>
 
-          <!-- Info note -->
-          <div class="tooltip-note">
-            <span class="tooltip-note-icon">💡</span>
-            <span>First launch downloads the Kokoro model (~330 MB). All subsequent runs are fully offline.</span>
-          </div>
+
 
         </div>
       </div>
 
     </div>
 
-    <!-- Progress Bar -->
-    <div class="progress-section">
-      <div class="progress-track">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-    </div>
 
-    <!-- Action Bar -->
-    <div class="action-bar">
-      <button class="btn btn-generate">
-        <span class="btn-icon">✨</span> Generate Speech
-      </button>
-      <button class="btn btn-play">
-        <span class="btn-icon">▶</span> Play
-      </button>
-      <button class="btn btn-stop">
-        <span class="btn-icon">■</span> Stop
-      </button>
-      <button class="btn btn-save">
-        <span class="btn-icon">💾</span> Save As…
-      </button>
+
+    <!-- Audio Player (Replacing Action Bar) -->
+    <div class="audio-player" style="border:none; border-radius:0; border-top:1px solid var(--border); flex-shrink: 0;">
+      <div class="player-top">
+        <div class="player-title"><span>Player</span></div>
+      </div>
+      
+      <div class="player-main" style="padding: 10px 16px;">
+        <div class="player-time-display">
+          <div class="player-current-time" style="font-size: 24px;">00:02</div>
+          <div class="player-total-time">00:04.2</div>
+        </div>
+        
+        <div class="player-waveform-container" style="height: 40px;">
+          <div class="player-file-info" style="margin-bottom: 4px;">
+            <span>output.wav</span>
+            <div class="player-file-badges">
+              <span>WAV</span>
+              <span>384kbps</span>
+              <span>24kHz</span>
+            </div>
+          </div>
+          <div class="player-waveform-track">
+            <div class="player-waveform-bars" id="waveform-dense"></div>
+            <div class="player-progress-overlay"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="player-controls">
+        <button class="player-btn" title="Play/Pause (Space)">⏸</button>
+        <button class="player-btn" title="Stop (Esc)">⏹</button>
+        <button class="player-btn" title="Previous">⏮</button>
+        <button class="player-btn" title="Next">⏭</button>
+        
+        <div class="player-bottom-info">
+          <span>00:00:02 / 00:00:04.2</span>
+          <span style="margin:0 4px; opacity:0.3">|</span>
+          <span>WAV</span>
+          <span>2.0</span>
+        </div>
+        
+        <div class="player-volume">
+          <button class="player-btn" style="width:24px;height:24px;font-size:12px;">🔊</button>
+          <div class="player-volume-slider">
+            <div class="player-volume-fill"></div>
+            <div class="player-volume-thumb"></div>
+          </div>
+          <button class="btn btn-save" style="margin-left: 16px; padding: 6px 12px; font-size: 11px;">
+            <span class="btn-icon" style="font-size:12px;">💾</span> Save As…
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Status Bar -->
@@ -887,7 +1108,10 @@
       <div class="status-item">🖥️ CUDA · RTX 3050 Ti</div>
       <div class="status-sep"></div>
       <div class="status-item">🎙 af_heart</div>
-      <div class="status-item status-right">
+      <div class="status-item status-right" style="gap: 16px;">
+        <button class="btn" style="padding: 4px 10px; font-size: 11px; background: transparent; border: 1px solid var(--border2); color: var(--text3); border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px;" title="View Generation History">
+          📂 History
+        </button>
         <span>Kokoro TTS Studio</span>
       </div>
     </div>
@@ -895,26 +1119,39 @@
   </div>
 
   <!-- State Previews -->
-  <div style="margin-top: 40px; display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+  <div style="margin-top: 40px; display:grid; grid-template-columns:1fr; gap:40px;">
 
     <!-- Generating State -->
     <div>
       <p class="page-label" style="margin-bottom:10px;">⏳ State: Generating…</p>
       <div class="app-window" style="border-radius:12px;">
-        <div class="action-bar" style="border-top:none; border-bottom:1px solid var(--border);">
-          <button class="btn btn-generate btn-disabled">
-            <span class="btn-icon">⏳</span> Generating…
-          </button>
-          <button class="btn btn-play btn-disabled"><span class="btn-icon">▶</span> Play</button>
-          <button class="btn btn-stop btn-disabled"><span class="btn-icon">■</span> Stop</button>
-          <button class="btn btn-save btn-disabled"><span class="btn-icon">💾</span> Save As…</button>
-        </div>
-        <div class="progress-section" style="padding:8px 16px;">
-          <div class="progress-track">
-            <div class="progress-fill" style="width:60%; animation: progressAnim 1.5s ease-in-out infinite alternate;"></div>
+        <div style="padding:16px;">
+          <div class="card text-panel">
+            <div class="card-header">
+              <span class="card-icon">📝</span>
+              <span class="card-title">Text Input</span>
+            </div>
+            <div class="text-area-wrap" style="padding:12px; min-height:80px; color:var(--text3); font-size:12px;">
+              Generating speech from text...
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 0 12px 12px;">
+              <div class="char-count" style="padding:0; text-align:left;">Characters: 148 &nbsp;·&nbsp; ~4 seconds estimated</div>
+              <button class="btn btn-generate generating" style="padding: 8px 16px; cursor:default; pointer-events:none;">
+                <div class="btn-progress-fill"></div>
+                <span class="btn-icon">⏳</span> <span>Generating… 60%</span>
+              </button>
+            </div>
           </div>
         </div>
-        <div class="statusbar">
+        
+        <div class="audio-player" style="border:none; border-radius:0; border-top:1px solid var(--border); flex-shrink: 0; opacity:0.5; pointer-events:none;">
+          <div class="player-controls">
+            <button class="player-btn">⏸</button>
+            <button class="player-btn">⏹</button>
+            <div class="player-bottom-info"><span>Waiting for audio...</span></div>
+          </div>
+        </div>
+        <div class="statusbar" style="background:var(--bg);">
           <div class="status-item">
             <div class="status-dot" style="background:var(--busy); box-shadow:0 0 6px var(--busy);"></div>
             <span class="status-text" style="color:var(--busy);">Generating audio…</span>
@@ -926,25 +1163,42 @@
     <!-- Error State -->
     <div>
       <p class="page-label" style="margin-bottom:10px;">❌ State: Error</p>
-      <div class="app-window" style="border-radius:12px; border-color:rgba(224,82,82,0.3);">
-        <div class="action-bar" style="border-top:none; border-bottom:1px solid var(--border);">
-          <button class="btn btn-generate">
-            <span class="btn-icon">✨</span> Generate Speech
-          </button>
-          <button class="btn btn-play btn-disabled"><span class="btn-icon">▶</span> Play</button>
-          <button class="btn btn-stop btn-disabled"><span class="btn-icon">■</span> Stop</button>
-          <button class="btn btn-save btn-disabled"><span class="btn-icon">💾</span> Save As…</button>
-        </div>
-        <div class="progress-section" style="padding:8px 16px;">
-          <div class="progress-track">
-            <div class="progress-fill" style="width:0%;"></div>
+      <div class="app-window" style="border-radius:12px; border-color:rgba(224,82,82,0.3); position:relative; overflow:hidden;">
+        <div style="padding:16px;">
+          <div class="card text-panel">
+            <div class="card-header">
+              <span class="card-icon">📝</span>
+              <span class="card-title">Text Input</span>
+            </div>
+            <div class="text-area-wrap" style="padding:12px; min-height:80px; color:var(--text); font-size:12px;">
+              The quick brown fox jumps over the lazy dog.
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 0 12px 12px;">
+              <div class="char-count" style="padding:0; text-align:left;">Characters: 44 &nbsp;·&nbsp; ~1 seconds estimated</div>
+              <button class="btn btn-generate" style="padding: 8px 16px;">
+                <span class="btn-icon">✨</span> <span>Generate Speech</span>
+              </button>
+            </div>
           </div>
         </div>
-        <div class="statusbar" style="background:linear-gradient(135deg,#1e0f0f,#2a1010);">
+        
+        <div class="audio-player" style="border:none; border-radius:0; border-top:1px solid var(--border); flex-shrink: 0; opacity:0.5; pointer-events:none;">
+          <div class="player-controls">
+            <button class="player-btn">⏸</button>
+            <button class="player-btn">⏹</button>
+            <div class="player-bottom-info"><span>No audio loaded</span></div>
+          </div>
+        </div>
+        <div class="statusbar" style="background:var(--bg);">
           <div class="status-item">
             <div class="status-dot" style="background:var(--err); box-shadow:0 0 6px var(--err); animation:none;"></div>
-            <span class="status-text" style="color:var(--err);">Error: Model failed to load</span>
+            <span class="status-text" style="color:var(--err);">Ready</span>
           </div>
+        </div>
+        
+        <div class="error-popup">
+          <span class="error-popup-icon">🔴</span>
+          <span>Error: Model failed to load</span>
         </div>
       </div>
     </div>
@@ -1000,21 +1254,24 @@
 </style>
 
 <script>
-  // Generate waveform bars
-  const waveform = document.getElementById('waveform');
-  const heights = [
-    20,35,55,70,85,90,75,60,80,95,85,70,55,40,60,75,90,80,65,50,
-    70,85,75,60,45,65,80,70,55,40,60,75,65,50,35,55,70,60,45,30,
-    50,65,55,40,25,45,60,50,35,20,40,55,45,30,15,35,50,40,25,10
-  ];
-  heights.forEach((h, i) => {
-    const bar = document.createElement('div');
-    bar.className = 'waveform-bar';
-    bar.style.height = h + '%';
-    bar.style.animationDelay = (i * 0.04) + 's';
-    bar.style.animationDuration = (0.8 + Math.random() * 0.8) + 's';
-    waveform.appendChild(bar);
-  });
+  // Generate dense waveform bars for player
+  const denseWaveform = document.getElementById('waveform-dense');
+  if (denseWaveform) {
+    const barCount = 140;
+    // Generate a nice envelope shape
+    for (let i = 0; i < barCount; i++) {
+      let phase = i / barCount * Math.PI * 4;
+      let envelope = Math.sin(i / barCount * Math.PI);
+      let noise = Math.random() * 0.4 + 0.6;
+      let h = Math.abs(Math.sin(phase) * Math.cos(phase * 2.3) * envelope * noise) * 100 + 10;
+      if (h > 100) h = 100;
+      
+      const bar = document.createElement('div');
+      bar.className = 'player-bar ' + (i < barCount * 0.35 ? 'played' : 'unplayed');
+      bar.style.height = h + '%';
+      denseWaveform.appendChild(bar);
+    }
+  }
 
   // Button hover interactions
   document.querySelectorAll('.btn:not(.btn-disabled)').forEach(btn => {
