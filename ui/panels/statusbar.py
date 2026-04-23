@@ -29,7 +29,9 @@ class StatusBar(ctk.CTkFrame):
         right = ctk.CTkFrame(inner, fg_color=C["titlebar"])
         right.pack(side="right")
 
-        ctk.CTkLabel(right, text="Kokoro TTS Studio", font=FONT_TINY,
+        from core.engine import TTSEngine
+        dev_info = TTSEngine.device_info()
+        ctk.CTkLabel(right, text=dev_info, font=FONT_TINY,
                      text_color=C["text3"]).pack(side="right", padx=(10, 0))
 
         ctk.CTkFrame(right, fg_color=C["border"], width=1, height=14,

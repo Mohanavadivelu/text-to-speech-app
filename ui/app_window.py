@@ -136,21 +136,40 @@ class KokoroApp(ctk.CTk):
 
     def _generate_worker(self, text, lang_code, voice_id, speed, pitch):
         try:
+            first_chunk_played = threading.Event()
+
             def on_status(msg):
                 self.after(0, lambda: self._statusbar.set_status(msg, "busy"))
 
             def on_progress(pct: int):
                 self.after(0, lambda p=pct: self._text_panel.set_generating(True, p))
 
+            def on_chunk(chunk_audio):
+                """Stream first chunk to player immediately so playback starts early."""
+                if not first_chunk_played.is_set():
+                    first_chunk_played.set()
+                    # Load just this chunk so the player can start right away
+                    self.after(0, lambda a=chunk_audio: self._on_first_chunk(a))
+
             audio, sr = self._engine.generate(
                 text, lang_code, voice_id, speed,
                 pitch=pitch, on_status=on_status, on_progress=on_progress,
+                on_chunk=on_chunk,
             )
             self._engine.save(audio, sr, _DEFAULT_OUTPUT)
             self.after(0, lambda: self._on_generate_done(audio, sr, _DEFAULT_OUTPUT, voice_id))
         except Exception as exc:
             log.exception("Generation failed: %s", exc)
             self.after(0, lambda msg=str(exc): self._on_generate_error(msg))
+
+    def _on_first_chunk(self, chunk_audio):
+        """Load the first audio chunk into the player so playback can start immediately."""
+        import numpy as np
+        chunk_audio = np.asarray(chunk_audio, dtype=np.float32)
+        self._player.load(chunk_audio, SAMPLE_RATE)
+        duration = len(chunk_audio) / SAMPLE_RATE
+        self._player_bar.set_audio_ready("generating…", duration)
+        self._statusbar.set_status("First segment ready — click ▶ to preview", "ok")
 
     def _on_generate_done(self, audio, sr, path, voice_id):
         self._generating = False
@@ -185,7 +204,8 @@ class KokoroApp(ctk.CTk):
     # ── Playback ───────────────────────────────────────────────────────────────
 
     def _on_play(self):
-        if self._audio_data is None:
+        # Allow playback if full audio is ready OR if a streaming chunk is loaded
+        if self._audio_data is None and self._player._audio is None:
             return
         self._player.play()
         self._statusbar.set_status("Playing…", "busy")
