@@ -63,3 +63,33 @@ pyside6_app/
 ### 3. The `workers/` Module (Concurrency)
 * **Rule:** Must safely bridge the UI and Core logic using Qt Signals.
 * **Responsibility:** Heavy lifting. When the user clicks "Generate", the UI spawns a `generation_worker` in a background thread. The worker calls `core.tts_engine`, waits for the output, and emits a success/error signal back to the UI.
+
+## UI Elements Details
+
+Below is a breakdown of the specific widgets found in `ui/widgets/`. For the exact HTML structure and CSS classes to be replicated in PySide6, click the reference links below to open the extracted prototype files.
+
+### 1. `titlebar.py`
+A custom, frameless title bar that allows window dragging and displays application context.
+* **Reference UI:** [`design/titlebar.html`](design/titlebar.html)
+
+### 2. `text_input.py`
+The primary text entry area where users type or paste the script to be spoken. Includes the embedded generation button.
+* **Reference UI:** [`design/text_panel.html`](design/text_panel.html)
+
+### 3. `settings_panel.py`
+The right-side dock containing all configuration options for the voice model.
+* **Reference UI:** [`design/settings_panel.html`](design/settings_panel.html)
+
+### 4. `audio_player.py`
+A bottom-anchored, DAW-style media player spanning the full width, featuring a dense waveform view.
+* **Reference UI:** [`design/audio_player.html`](design/audio_player.html)
+
+### 5. `statusbar.py`
+A thin strip at the very bottom of the window indicating system status.
+* **Reference UI:** [`design/statusbar.html`](design/statusbar.html)
+
+---
+
+### Global Stylesheet
+The full Dark Studio theme CSS that will be translated into QSS (Qt StyleSheet) format.
+* **Reference CSS:** [`design/styles.css`](design/styles.css)
