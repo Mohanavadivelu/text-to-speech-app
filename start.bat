@@ -28,14 +28,12 @@ if not exist "%VENV%\Scripts\python.exe" (
     echo  [INFO] No virtual environment found -- will create one.
     set NEED_CREATE=1
 ) else (
-    for /f %%m in ('"%VENV%\Scripts\python.exe" -c "import sys; print(sys.version_info.minor)" 2^>nul') do set VENV_MINOR=%%m
     for /f "tokens=*" %%v in ('"%VENV%\Scripts\python.exe" --version 2^>^&1') do set VENV_PY_STR=%%v
 
-    if !VENV_MINOR! LSS %PY_MIN% (
-        echo  [WARN] Venv uses !VENV_PY_STR! -- too old for kokoro/torch ^(need 3.%PY_MIN% - 3.%PY_MAX%^).
-        set NEED_CREATE=1
-    ) else if !VENV_MINOR! GTR %PY_MAX% (
-        echo  [WARN] Venv uses !VENV_PY_STR! -- too new for kokoro/torch ^(need 3.%PY_MIN% - 3.%PY_MAX%^).
+    :: Let Python itself do the version range check to avoid batch string-vs-numeric comparison bugs
+    "%VENV%\Scripts\python.exe" -c "import sys; exit(0 if %PY_MIN% <= sys.version_info.minor <= %PY_MAX% else 1)" >nul 2>&1
+    if errorlevel 1 (
+        echo  [WARN] Venv uses !VENV_PY_STR! -- incompatible with kokoro/torch ^(need 3.%PY_MIN% - 3.%PY_MAX%^).
         set NEED_CREATE=1
     ) else (
         echo  Venv   : %VENV%
@@ -96,10 +94,15 @@ if "%NEED_CREATE%"=="1" (
 )
 
 :: ── 3. Check dependencies ────────────────────────────────────────────────────
+if not exist "%VENV%\Scripts\pip.exe" (
+    echo  [ERROR] pip not found in venv. Delete the venv folder and re-run.
+    pause & exit /b 1
+)
+
 echo  Checking dependencies...
 echo.
 set MISSING=0
-for /f "eol=# tokens=1 delims=>= " %%p in (%REQUIREMENTS%) do (
+for /f "eol=# tokens=1 delims=>[=[ " %%p in (%REQUIREMENTS%) do (
     "%VENV%\Scripts\pip.exe" show %%p >nul 2>&1
     if errorlevel 1 (
         echo   [MISSING] %%p
@@ -131,7 +134,7 @@ if "%MISSING%"=="1" (
 
     echo  [INFO] Installing remaining packages from requirements.txt...
     echo.
-    "%VENV%\Scripts\pip.exe" install -r "%REQUIREMENTS%"
+    "%VENV%\Scripts\pip.exe" install -r "%REQUIREMENTS%" --extra-index-url https://download.pytorch.org/whl/cpu
     if errorlevel 1 (
         echo.
         echo  [ERROR] Installation failed. Check the output above for details.
@@ -140,6 +143,27 @@ if "%MISSING%"=="1" (
     echo.
     echo  [OK]   All packages installed successfully.
     echo.
+)
+
+:: ── 3b. Verify torch is CPU build (not CUDA) ────────────────────────────────
+"%VENV%\Scripts\pip.exe" show torch >nul 2>&1
+if not errorlevel 1 (
+    "%VENV%\Scripts\python.exe" -c "import torch; exit(1 if torch.version.cuda else 0)" >nul 2>&1
+    if errorlevel 1 (
+        echo  [WARN] CUDA build of PyTorch detected -- reinstalling CPU build...
+        echo.
+        "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu --force-reinstall
+        if errorlevel 1 (
+            echo  [ERROR] Failed to reinstall PyTorch CPU build.
+            pause & exit /b 1
+        )
+        echo.
+        echo  [OK]   PyTorch CPU build installed.
+        echo.
+    ) else (
+        echo  [OK]   PyTorch CPU build confirmed.
+        echo.
+    )
 )
 
 :: ── 4. Activate venv ─────────────────────────────────────────────────────────
@@ -153,3 +177,4 @@ echo  Starting Kokoro TTS...
 echo =============================================================
 echo.
 python "%APP%"
+pause
