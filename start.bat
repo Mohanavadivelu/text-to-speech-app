@@ -111,7 +111,25 @@ for /f "eol=# tokens=1 delims=>= " %%p in (%REQUIREMENTS%) do (
 echo.
 
 if "%MISSING%"=="1" (
-    echo  [INFO] Installing missing packages from requirements.txt...
+    :: Install PyTorch CPU-only first so kokoro does not pull in the CUDA build.
+    :: The CUDA build requires CUDA DLLs that cause c10.dll to fail on machines
+    :: without a GPU / CUDA toolkit installed.
+    "%VENV%\Scripts\pip.exe" show torch >nul 2>&1
+    if errorlevel 1 (
+        echo  [INFO] Installing PyTorch CPU build...
+        echo.
+        "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+        if errorlevel 1 (
+            echo.
+            echo  [ERROR] Failed to install PyTorch. Check your internet connection.
+            pause & exit /b 1
+        )
+        echo.
+        echo  [OK]   PyTorch CPU installed.
+        echo.
+    )
+
+    echo  [INFO] Installing remaining packages from requirements.txt...
     echo.
     "%VENV%\Scripts\pip.exe" install -r "%REQUIREMENTS%"
     if errorlevel 1 (
@@ -124,9 +142,14 @@ if "%MISSING%"=="1" (
     echo.
 )
 
-:: ── 4. Launch ────────────────────────────────────────────────────────────────
+:: ── 4. Activate venv ─────────────────────────────────────────────────────────
+call "%VENV%\Scripts\activate.bat"
+echo  [OK]   Venv activated: %VIRTUAL_ENV%
+echo.
+
+:: ── 5. Launch ────────────────────────────────────────────────────────────────
 echo =============================================================
 echo  Starting Kokoro TTS...
 echo =============================================================
 echo.
-"%VENV%\Scripts\python.exe" "%APP%"
+python "%APP%"
