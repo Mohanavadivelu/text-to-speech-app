@@ -1,0 +1,164 @@
+<div style="margin-top: 40px; display:grid; grid-template-columns:1fr; gap:40px;">
+
+    <!-- Generating State -->
+    <div>
+      <p class="page-label" style="margin-bottom:10px;">⏳ State: Generating…</p>
+      <div class="app-window" style="border-radius:12px;">
+        <div style="padding:16px;">
+          <div class="card text-panel">
+            <div class="card-header">
+              <span class="card-icon">📝</span>
+              <span class="card-title">Text Input</span>
+            </div>
+            <div class="text-area-wrap" style="padding:12px; min-height:80px; color:var(--text3); font-size:12px;">
+              Generating speech from text...
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 0 12px 12px;">
+              <div class="char-count" style="padding:0; text-align:left;">Characters: 148 &nbsp;·&nbsp; ~4 seconds estimated</div>
+              <button class="btn btn-generate generating" style="padding: 8px 16px; cursor:default; pointer-events:none;">
+                <div class="btn-progress-fill"></div>
+                <span class="btn-icon">⏳</span> <span>Generating… 60%</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="audio-player" style="border:none; border-radius:0; border-top:1px solid var(--border); flex-shrink: 0; opacity:0.5; pointer-events:none;">
+          <div class="player-controls">
+            <button class="player-btn">⏸</button>
+            <button class="player-btn">⏹</button>
+            <div class="player-bottom-info"><span>Waiting for audio...</span></div>
+          </div>
+        </div>
+        <div class="statusbar" style="background:var(--bg);">
+          <div class="status-item">
+            <div class="status-dot" style="background:var(--busy); box-shadow:0 0 6px var(--busy);"></div>
+            <span class="status-text" style="color:var(--busy);">Generating audio…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error State -->
+    <div>
+      <p class="page-label" style="margin-bottom:10px;">❌ State: Error</p>
+      <div class="app-window" style="border-radius:12px; border-color:rgba(224,82,82,0.3); position:relative; overflow:hidden;">
+        <div style="padding:16px;">
+          <div class="card text-panel">
+            <div class="card-header">
+              <span class="card-icon">📝</span>
+              <span class="card-title">Text Input</span>
+            </div>
+            <div class="text-area-wrap" style="padding:12px; min-height:80px; color:var(--text); font-size:12px;">
+              The quick brown fox jumps over the lazy dog.
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 0 12px 12px;">
+              <div class="char-count" style="padding:0; text-align:left;">Characters: 44 &nbsp;·&nbsp; ~1 seconds estimated</div>
+              <button class="btn btn-generate" style="padding: 8px 16px;">
+                <span class="btn-icon">✨</span> <span>Generate Speech</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="audio-player" style="border:none; border-radius:0; border-top:1px solid var(--border); flex-shrink: 0; opacity:0.5; pointer-events:none;">
+          <div class="player-controls">
+            <button class="player-btn">⏸</button>
+            <button class="player-btn">⏹</button>
+            <div class="player-bottom-info"><span>No audio loaded</span></div>
+          </div>
+        </div>
+        <div class="statusbar" style="background:var(--bg);">
+          <div class="status-item">
+            <div class="status-dot" style="background:var(--err); box-shadow:0 0 6px var(--err); animation:none;"></div>
+            <span class="status-text" style="color:var(--err);">Ready</span>
+          </div>
+        </div>
+        
+        <div class="error-popup">
+          <span class="error-popup-icon">🔴</span>
+          <span>Error: Model failed to load</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Color Palette Reference -->
+  <div style="margin-top:40px;">
+    <p class="page-label" style="margin-bottom:16px;">🎨 Color Palette — Studio Dark</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px;">
+      <div style="background:#0f0f13; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#9898b8; margin-bottom:4px;">Background</div>
+        <div style="font-size:12px; color:#e8e8f0; font-family:monospace;">#0f0f13</div>
+      </div>
+      <div style="background:#1a1a24; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#9898b8; margin-bottom:4px;">Surface</div>
+        <div style="font-size:12px; color:#e8e8f0; font-family:monospace;">#1a1a24</div>
+      </div>
+      <div style="background:#7c5cbf; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Accent</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#7c5cbf</div>
+      </div>
+      <div style="background:#1db97a; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Play</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#1db97a</div>
+      </div>
+      <div style="background:#e05252; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Stop</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#e05252</div>
+      </div>
+      <div style="background:#3b8eea; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#fff; margin-bottom:4px;">Save</div>
+        <div style="font-size:12px; color:#fff; font-family:monospace;">#3b8eea</div>
+      </div>
+      <div style="background:#4ade80; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#0f0f13; margin-bottom:4px;">Status OK</div>
+        <div style="font-size:12px; color:#0f0f13; font-family:monospace;">#4ade80</div>
+      </div>
+      <div style="background:#f59e0b; border:1px solid #2e2e42; border-radius:8px; padding:12px; text-align:center;">
+        <div style="font-size:11px; color:#0f0f13; margin-bottom:4px;">Busy</div>
+        <div style="font-size:12px; color:#0f0f13; font-family:monospace;">#f59e0b</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+@keyframes progressAnim {
+  from { width: 30%; }
+  to   { width: 80%; }
+}
+</style>
+
+<script>
+  // Generate dense waveform bars for player
+  const denseWaveform = document.getElementById('waveform-dense');
+  if (denseWaveform) {
+    const barCount = 140;
+    // Generate a nice envelope shape
+    for (let i = 0; i < barCount; i++) {
+      let phase = i / barCount * Math.PI * 4;
+      let envelope = Math.sin(i / barCount * Math.PI);
+      let noise = Math.random() * 0.4 + 0.6;
+      let h = Math.abs(Math.sin(phase) * Math.cos(phase * 2.3) * envelope * noise) * 100 + 10;
+      if (h > 100) h = 100;
+      
+      const bar = document.createElement('div');
+      bar.className = 'player-bar ' + (i < barCount * 0.35 ? 'played' : 'unplayed');
+      bar.style.height = h + '%';
+      denseWaveform.appendChild(bar);
+    }
+  }
+
+  // Button hover interactions
+  document.querySelectorAll('.btn:not(.btn-disabled)').forEach(btn => {
+    btn.addEventListener('mouseenter', () => {
+      btn.style.transform = 'translateY(-2px)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = '';
+    });
+  });
+</script>

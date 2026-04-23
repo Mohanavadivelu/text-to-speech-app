@@ -1,0 +1,104 @@
+<div class="card settings-panel">
+        <div class="card-header" style="justify-content: space-between;">
+          <div>
+            <span class="card-icon">🎛️</span>
+            <span class="card-title">Voice Settings</span>
+          </div>
+          <button class="player-btn" style="width: 24px; height: 24px; font-size: 12px; background: transparent; padding: 0;" title="Collapse Panel">▶️</button>
+        </div>
+
+        <div class="settings-body">
+
+          <!-- Language -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">🌐</span> Language
+            </div>
+            <div class="combo">
+              <div class="combo-value">
+                <span>🇺🇸</span>
+                <span>American English</span>
+              </div>
+              <span class="combo-arrow">▼</span>
+            </div>
+          </div>
+
+          <!-- Voice -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">🎤</span> Voice
+            </div>
+            <div class="combo" style="padding-right: 8px;">
+              <div class="combo-value">
+                <span>♀</span>
+                <span>Heart</span>
+                <span class="voice-badge">A ❤️</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <button class="player-btn" style="width: 22px; height: 22px; font-size: 10px; background: var(--surface3); border-radius: 4px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.2);" title="Preview Voice 'Heart'">▶</button>
+                <span class="combo-arrow">▼</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Speed -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">⚡</span> Speed
+            </div>
+            <div style="text-align:center; margin-bottom:6px;">
+              <div class="speed-value">1.0</div>
+              <div class="speed-unit">× normal speed</div>
+            </div>
+            <div class="speed-row">
+              <span class="speed-min">0.5×</span>
+              <div class="slider-track">
+                <div class="slider-fill"></div>
+                <div class="slider-thumb"></div>
+              </div>
+              <span class="speed-max">2.0×</span>
+            </div>
+          </div>
+          <!-- Advanced Settings Accordion -->
+          <details class="advanced-settings" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <summary style="font-size: 11px; color: var(--text3); cursor: pointer; user-select: none; font-weight: 500; display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 10px;">▶</span> Advanced Settings
+            </summary>
+            <div style="padding-top: 12px; display: flex; flex-direction: column; gap: 12px;">
+              <!-- Pitch -->
+              <div class="setting-group" style="margin: 0;">
+                <div class="setting-label" style="margin-bottom: 6px;"><span class="setting-label-icon">🎵</span> Pitch</div>
+                <div class="speed-row">
+                  <span class="speed-min">-5</span>
+                  <div class="slider-track"><div class="slider-fill" style="width: 50%;"></div><div class="slider-thumb" style="left: 50%;"></div></div>
+                  <span class="speed-max">+5</span>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="divider"></div>
+
+          <!-- Output -->
+          <div class="setting-group">
+            <div class="setting-label">
+              <span class="setting-label-icon">📁</span> Last Output
+            </div>
+            <div class="output-info">
+              <div class="output-icon">🔊</div>
+              <div class="output-details">
+                <div class="output-name">output.wav</div>
+                <div class="output-meta">24 kHz · WAV · 4.2s</div>
+              </div>
+              <span class="output-check">✅</span>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+
+
+        </div>
+      </div>
+
+    </div>
