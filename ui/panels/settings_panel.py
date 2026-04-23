@@ -188,3 +188,6 @@ class SettingsPanel(ctk.CTkFrame):
 
     def get_speed(self) -> float:
         return round(self.speed_var.get(), 1)
+
+    def get_pitch(self) -> float:
+        return round(self.pitch_var.get(), 1)

@@ -1,10 +1,9 @@
 import os
-import sys
 import logging
 import threading
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from ui.theme import C, WIN_W, WIN_H, WIN_MIN_W, WIN_MIN_H
 from ui.panels.titlebar import TitleBar
@@ -19,6 +18,10 @@ from core.player import AudioPlayer
 from core.voices import VOICES, LANG_CODES
 
 log = logging.getLogger(__name__)
+
+# Output file is always written next to app.py (project root)
+_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+_DEFAULT_OUTPUT = os.path.join(_ROOT, "output.wav")
 
 
 class KokoroApp(ctk.CTk):
@@ -46,15 +49,12 @@ class KokoroApp(ctk.CTk):
     # ── Layout ─────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Title bar
         self._titlebar = TitleBar(self)
         self._titlebar.pack(fill="x")
 
-        # Status bar (packed last so it stays at bottom)
         self._statusbar = StatusBar(self)
         self._statusbar.pack(side="bottom", fill="x")
 
-        # Player bar above status bar
         self._player_bar = PlayerBar(
             self,
             on_play=self._on_play,
@@ -66,7 +66,6 @@ class KokoroApp(ctk.CTk):
         )
         self._player_bar.pack(side="bottom", fill="x")
 
-        # Body: text panel (left) + settings panel (right)
         body = ctk.CTkFrame(self, fg_color=C["bg"])
         body.pack(fill="both", expand=True, padx=14, pady=(10, 6))
         body.grid_columnconfigure(0, weight=1)
@@ -87,7 +86,6 @@ class KokoroApp(ctk.CTk):
     def _bind_shortcuts(self):
         self.bind("<Escape>", lambda _e: self._on_stop())
         self.bind("<Control-s>", lambda _e: self._on_save())
-        # Space for play/pause only when text input is not focused
         self.bind("<space>", self._on_space)
 
     # ── Voice helpers ──────────────────────────────────────────────────────────
@@ -95,12 +93,10 @@ class KokoroApp(ctk.CTk):
     def _update_voice_list(self, lang_key: str):
         voices = VOICES.get(lang_key, [])
         self._settings_panel.update_voice_list(lang_key, voices)
-        vid = self._get_voice_id()
-        self._statusbar.set_voice(vid)
+        self._statusbar.set_voice(self._get_voice_id())
 
     def _on_voice_change(self, _label: str):
-        vid = self._get_voice_id()
-        self._statusbar.set_voice(vid)
+        self._statusbar.set_voice(self._get_voice_id())
 
     def _get_voice_id(self) -> str:
         lang_key = self._settings_panel.get_language_key()
@@ -116,7 +112,7 @@ class KokoroApp(ctk.CTk):
     def _on_generate(self):
         text = self._text_panel.get_text()
         if not text:
-            messagebox.showwarning("No Text", "Please enter some text first.")
+            Toast(self, "Please enter some text first.", kind="error")
             return
         if self._generating:
             return
@@ -126,29 +122,32 @@ class KokoroApp(ctk.CTk):
         self._player_bar.set_generating(True)
         self._statusbar.set_status("Generating audio…", "busy")
 
-        lang_key = self._settings_panel.get_language_key()
+        lang_key  = self._settings_panel.get_language_key()
         lang_code = LANG_CODES.get(lang_key, "a")
-        voice_id = self._get_voice_id()
-        speed = self._settings_panel.get_speed()
+        voice_id  = self._get_voice_id()
+        speed     = self._settings_panel.get_speed()
+        pitch     = self._settings_panel.get_pitch()
 
         threading.Thread(
             target=self._generate_worker,
-            args=(text, lang_code, voice_id, speed),
+            args=(text, lang_code, voice_id, speed, pitch),
             daemon=True,
         ).start()
 
-    def _generate_worker(self, text, lang_code, voice_id, speed):
+    def _generate_worker(self, text, lang_code, voice_id, speed, pitch):
         try:
             def on_status(msg):
                 self.after(0, lambda: self._statusbar.set_status(msg, "busy"))
 
-            audio, sr = self._engine.generate(text, lang_code, voice_id, speed,
-                                              on_status=on_status)
-            out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "..", "output.wav")
-            out_path = os.path.normpath(out_path)
-            self._engine.save(audio, sr, out_path)
-            self.after(0, lambda: self._on_generate_done(audio, sr, out_path, voice_id))
+            def on_progress(pct: int):
+                self.after(0, lambda p=pct: self._text_panel.set_generating(True, p))
+
+            audio, sr = self._engine.generate(
+                text, lang_code, voice_id, speed,
+                pitch=pitch, on_status=on_status, on_progress=on_progress,
+            )
+            self._engine.save(audio, sr, _DEFAULT_OUTPUT)
+            self.after(0, lambda: self._on_generate_done(audio, sr, _DEFAULT_OUTPUT, voice_id))
         except Exception as exc:
             log.exception("Generation failed: %s", exc)
             self.after(0, lambda msg=str(exc): self._on_generate_error(msg))
@@ -169,7 +168,6 @@ class KokoroApp(ctk.CTk):
         self._text_panel.set_generating(False)
         self._player_bar.set_generating(False)
         self._player_bar.set_audio_ready(filename, duration)
-        self._player_bar.waveform.set_audio(audio, sr)
 
         self._settings_panel.update_output_info(filename, meta)
         self._statusbar.set_voice(voice_id)
@@ -202,7 +200,16 @@ class KokoroApp(ctk.CTk):
         self._statusbar.set_status("Ready", "ok")
 
     def _on_seek(self, ratio: float):
-        pass  # future: restart playback from position
+        # Restart playback from the seeked position
+        if self._audio_data is None:
+            return
+        was_playing = self._player.is_playing
+        self._player.stop()
+        total = len(self._audio_data)
+        self._player._start_sample = int(ratio * total)
+        self._player._position = ratio
+        if was_playing:
+            self._player.play()
 
     def _on_volume(self, value: float):
         self._player.set_volume(value)
@@ -211,7 +218,7 @@ class KokoroApp(ctk.CTk):
         focused = self.focus_get()
         if focused is self._text_panel.text_input:
             return
-        self._player_bar._toggle_play()
+        self._player_bar.toggle_play()
 
     def _on_player_progress(self, ratio: float):
         duration = self._player.duration
@@ -238,9 +245,9 @@ class KokoroApp(ctk.CTk):
             Toast(self, f"Saved to {os.path.basename(path)}", kind="info")
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    logging.basicConfig(level=logging.DEBUG)
     app = KokoroApp()
     app.mainloop()

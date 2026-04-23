@@ -432,8 +432,6 @@ PAUSED
 ```
 text-to-speech-app/
 │
-├── app.py                          ← Entry point (< 10 lines)
-│
 ├── core/
 │   ├── __init__.py
 │   ├── engine.py                   ← TTSEngine: KPipeline wrapper, generate()

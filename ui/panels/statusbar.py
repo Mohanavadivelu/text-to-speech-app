@@ -65,5 +65,9 @@ class StatusBar(ctk.CTkFrame):
         self._voice_lbl.configure(text=f"🎙 {voice_id}")
 
     def _pulse(self, colour: str, show: bool):
-        self._dot.configure(text_color=colour if show else C["titlebar"])
-        self._pulse_after = self.after(500, lambda: self._pulse(colour, not show))
+        try:
+            self._dot.configure(text_color=colour if show else C["titlebar"])
+            self._pulse_after = self.after(500, lambda: self._pulse(colour, not show))
+        except Exception:
+            # Widget destroyed (window closed) — stop pulsing silently
+            self._pulse_after = None
