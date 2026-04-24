@@ -12,39 +12,63 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
 
-# ── Device selection ──────────────────────────────────────────────────────────
-# Use CUDA if available, otherwise fall back to CPU.
+# ── Device selection & GPU optimization ───────────────────────────────────────
+# ✓ Using maximum GPU capabilities for fastest inference
 if torch.cuda.is_available():
     DEVICE = "cuda"
-    # Allow cuDNN to auto-tune for best performance on this GPU
+
+    # === MAXIMIZING GPU PERFORMANCE ===
+    # Enable cuDNN auto-tuning for optimal GPU kernels on this hardware
     torch.backends.cudnn.benchmark = True
-    log.info("Using CUDA device: %s  (%.1f GB VRAM)",
-             torch.cuda.get_device_name(0),
-             torch.cuda.get_device_properties(0).total_memory / 1024**3)
+    # Ensure determinism doesn't slow down inference (use fastest algorithms)
+    torch.backends.cudnn.deterministic = False
+
+    # Get GPU memory info
+    gpu_props = torch.cuda.get_device_properties(0)
+    gpu_name = torch.cuda.get_device_name(0)
+    total_vram = gpu_props.total_memory / 1024**3
+    compute_capability = f"{gpu_props.major}.{gpu_props.minor}"
+
+    # Defer GPU info logging — basicConfig may not be set up yet at import time.
+    # Call log_device_info() after logging is configured.
 else:
     DEVICE = "cpu"
     # Use all available CPU threads for inference
     torch.set_num_threads(os.cpu_count() or 4)
     log.info("CUDA not available — using CPU with %d threads", torch.get_num_threads())
 
-# Maximum characters per segment sent to KPipeline in one call.
-# Kokoro works best on ~500-char segments; larger inputs slow it down.
-_MAX_SEGMENT_CHARS = 500
+# ── Segment size ──────────────────────────────────────────────────────────────
+# Larger segments = fewer pipeline calls = less per-call overhead.
+# On GPU with 4 GB VRAM, 2000 chars per segment is safe and fast.
+# On CPU, keep smaller to avoid long blocking calls.
+_MAX_SEGMENT_CHARS = 2000 if DEVICE == "cuda" else 800
 
 # Number of parallel KPipeline workers.
-# On GPU: 1 worker (GPU is already parallel internally).
+# On GPU: 1 worker (GPU handles parallelism internally).
 # On CPU: up to 2 workers to use multiple cores.
 _MAX_WORKERS = 1 if DEVICE == "cuda" else 2
 
+# Clear VRAM cache every N segments to prevent fragmentation on 4 GB cards
+_VRAM_CLEAR_INTERVAL = 10
+
 
 def _split_paragraphs(text: str, max_chars: int = _MAX_SEGMENT_CHARS) -> list[str]:
-    """Split text into segments ≤ max_chars, breaking on paragraph/sentence boundaries."""
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    """Split text into segments ≤ max_chars.
 
-    segments = []
-    for para in paragraphs:
+    Strategy:
+    1. Split on blank lines → raw paragraphs
+    2. Break any paragraph > max_chars on sentence boundaries
+    3. PACK multiple short paragraphs into one segment up to max_chars
+       (this prevents 691 tiny segments from a 182k-char text with many short paras)
+    """
+    # ── Step 1: raw paragraph split ──────────────────────────────────────────
+    raw_paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+    # ── Step 2: break oversized paragraphs on sentence boundaries ────────────
+    atomic: list[str] = []
+    for para in raw_paras:
         if len(para) <= max_chars:
-            segments.append(para)
+            atomic.append(para)
         else:
             sentences = re.split(r'(?<=[.!?])\s+', para)
             current = ""
@@ -53,13 +77,28 @@ def _split_paragraphs(text: str, max_chars: int = _MAX_SEGMENT_CHARS) -> list[st
                     current = (current + " " + sent).strip() if current else sent
                 else:
                     if current:
-                        segments.append(current)
+                        atomic.append(current)
+                    # Hard-split sentences that are still too long
                     while len(sent) > max_chars:
-                        segments.append(sent[:max_chars])
+                        atomic.append(sent[:max_chars])
                         sent = sent[max_chars:]
                     current = sent
             if current:
-                segments.append(current)
+                atomic.append(current)
+
+    # ── Step 3: pack atomic pieces into segments up to max_chars ─────────────
+    segments: list[str] = []
+    bucket = ""
+    for piece in atomic:
+        separator = "\n\n" if bucket else ""
+        if len(bucket) + len(separator) + len(piece) <= max_chars:
+            bucket = bucket + separator + piece
+        else:
+            if bucket:
+                segments.append(bucket)
+            bucket = piece
+    if bucket:
+        segments.append(bucket)
 
     return segments or [text]
 
@@ -102,11 +141,13 @@ class TTSEngine:
 
     @staticmethod
     def _run_pipeline(pipeline, text: str, voice_id: str, speed: float) -> np.ndarray:
+        """Run pipeline with inference_mode for maximum speed (no gradient tracking)."""
         chunks = []
-        for _gs, _ps, audio in pipeline(text, voice=voice_id, speed=speed):
-            if hasattr(audio, "numpy"):
-                audio = audio.detach().cpu().numpy()
-            chunks.append(np.asarray(audio, dtype=np.float32))
+        with torch.inference_mode():
+            for _gs, _ps, audio in pipeline(text, voice=voice_id, speed=speed):
+                if hasattr(audio, "numpy"):
+                    audio = audio.detach().cpu().numpy()
+                chunks.append(np.asarray(audio, dtype=np.float32))
         if not chunks:
             return np.zeros(0, dtype=np.float32)
         return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
@@ -151,6 +192,9 @@ class TTSEngine:
                     on_progress(pct)
                 if on_status:
                     on_status(f"Generating… {i + 1} / {total_segs} [{DEVICE.upper()}]")
+                # Periodically clear VRAM cache to prevent fragmentation
+                if DEVICE == "cuda" and (i + 1) % _VRAM_CLEAR_INTERVAL == 0:
+                    torch.cuda.empty_cache()
         else:
             # ── Parallel path (CPU multi-core) ────────────────────────────────
             def _warm():
@@ -193,6 +237,10 @@ class TTSEngine:
         valid = [c for c in all_chunks if c is not None and len(c) > 0]
         full_audio = np.concatenate(valid) if len(valid) > 1 else valid[0]
 
+        # Final VRAM cleanup
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
+
         if on_progress:
             on_progress(100)
 
@@ -212,6 +260,26 @@ class TTSEngine:
         if DEVICE == "cuda":
             name = torch.cuda.get_device_name(0)
             vram = round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1)
-            return f"🖥️ {name} · {vram} GB VRAM · CUDA"
+            cc = f"{torch.cuda.get_device_properties(0).major}.{torch.cuda.get_device_properties(0).minor}"
+            return f"🚀 {name} · {vram} GB · CUDA {cc}"
         cores = os.cpu_count() or 1
         return f"🖥️ CPU · {cores} threads"
+
+
+def log_device_info():
+    """Log GPU/CPU info. Call this AFTER logging.basicConfig() is configured."""
+    if DEVICE == "cuda":
+        log.info("=" * 70)
+        log.info("🚀 GPU ACCELERATION ENABLED - MAXIMIZING GPU CAPABILITIES")
+        log.info("=" * 70)
+        log.info("GPU Device    : %s", gpu_name)
+        log.info("Compute Cap.  : %s", compute_capability)
+        log.info("Total VRAM    : %.1f GB", total_vram)
+        log.info("Segment size  : %d chars (GPU optimized)", _MAX_SEGMENT_CHARS)
+        log.info("cuDNN Bench   : ENABLED")
+        log.info("Deterministic : DISABLED (fastest mode)")
+        log.info("inference_mode: ENABLED")
+        log.info("=" * 70)
+    else:
+        log.info("Device: CPU — %d threads", torch.get_num_threads())
+        log.info("Segment size : %d chars", _MAX_SEGMENT_CHARS)

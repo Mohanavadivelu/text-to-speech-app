@@ -13,7 +13,7 @@ from ui.panels.player_bar import PlayerBar
 from ui.panels.statusbar import StatusBar
 from ui.components.toast import Toast
 
-from core.engine import TTSEngine, SAMPLE_RATE
+from core.engine import TTSEngine, SAMPLE_RATE, log_device_info
 from core.player import AudioPlayer
 from core.voices import VOICES, LANG_CODES
 
@@ -45,6 +45,8 @@ class KokoroApp(ctk.CTk):
         self._build_ui()
         self._update_voice_list("American English")
         self._bind_shortcuts()
+        # Show device info toast after window is fully drawn
+        self.after(500, self._show_device_toast)
 
     # ── Layout ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,12 @@ class KokoroApp(ctk.CTk):
         self.bind("<Escape>", lambda _e: self._on_stop())
         self.bind("<Control-s>", lambda _e: self._on_save())
         self.bind("<space>", self._on_space)
+
+    def _show_device_toast(self):
+        from core.engine import DEVICE, TTSEngine
+        info = TTSEngine.device_info()
+        kind = "info" if DEVICE == "cuda" else "error"
+        Toast(self, info, kind=kind)
 
     # ── Voice helpers ──────────────────────────────────────────────────────────
 
@@ -268,6 +276,11 @@ class KokoroApp(ctk.CTk):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    log_device_info()   # now logging is configured — GPU info will appear in console/log
     app = KokoroApp()
     app.mainloop()
