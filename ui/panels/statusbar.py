@@ -29,8 +29,16 @@ class StatusBar(ctk.CTkFrame):
         right = ctk.CTkFrame(inner, fg_color=C["titlebar"])
         right.pack(side="right")
 
-        from core.engine import TTSEngine
-        dev_info = TTSEngine.device_info()
+        from core.engine import DEVICE
+        import torch
+        if DEVICE == "cuda":
+            # Shorten to "CUDA · RTX 3050 Ti" style (strip "NVIDIA GeForce " prefix)
+            full = torch.cuda.get_device_name(0)
+            short = full.replace("NVIDIA GeForce ", "").replace(" Laptop GPU", "")
+            dev_info = f"🖥  CUDA · {short}"
+        else:
+            import os
+            dev_info = f"🖥  CPU · {os.cpu_count()} threads"
         ctk.CTkLabel(right, text=dev_info, font=FONT_TINY,
                      text_color=C["text3"]).pack(side="right", padx=(10, 0))
 

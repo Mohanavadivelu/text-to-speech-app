@@ -18,7 +18,7 @@ class TitleBar(ctk.CTkFrame):
                                width=32, height=32, corner_radius=8)
         icon_bg.pack(side="left")
         icon_bg.pack_propagate(False)
-        ctk.CTkLabel(icon_bg, text="🎙", font=("Segoe UI", 14),
+        ctk.CTkLabel(icon_bg, text="⚡", font=("Segoe UI", 14),
                      fg_color=C["accent"]).place(relx=0.5, rely=0.5, anchor="center")
 
         title_col = ctk.CTkFrame(left, fg_color=C["titlebar"])

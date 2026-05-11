@@ -45,6 +45,8 @@ class KokoroApp(ctk.CTk):
         self._build_ui()
         self._update_voice_list("American English")
         self._bind_shortcuts()
+        # Clean shutdown when the window X button is clicked
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         # Show device info toast after window is fully drawn
         self.after(500, self._show_device_toast)
 
@@ -65,6 +67,8 @@ class KokoroApp(ctk.CTk):
             on_save=self._on_save,
             on_seek=self._on_seek,
             on_volume=self._on_volume,
+            on_skip_back=self._on_skip_back,
+            on_skip_fwd=self._on_skip_fwd,
         )
         self._player_bar.pack(side="bottom", fill="x")
 
@@ -195,6 +199,7 @@ class KokoroApp(ctk.CTk):
         self._text_panel.set_generating(False)
         self._player_bar.set_generating(False)
         self._player_bar.set_audio_ready(filename, duration)
+        self._player_bar.set_audio_data(audio, sr)   # render waveform
 
         self._settings_panel.update_output_info(filename, meta)
         self._statusbar.set_voice(voice_id)
@@ -239,6 +244,22 @@ class KokoroApp(ctk.CTk):
         if was_playing:
             self._player.play()
 
+    def _on_skip_back(self):
+        """Skip back 5 seconds."""
+        if self._audio_data is None:
+            return
+        new_pos = max(0.0, self._player.position - 5.0 / self._player.duration)
+        self._on_seek(new_pos)
+        self._player_bar.update_progress(new_pos, self._player.duration)
+
+    def _on_skip_fwd(self):
+        """Skip forward 5 seconds."""
+        if self._audio_data is None:
+            return
+        new_pos = min(1.0, self._player.position + 5.0 / self._player.duration)
+        self._on_seek(new_pos)
+        self._player_bar.update_progress(new_pos, self._player.duration)
+
     def _on_volume(self, value: float):
         self._player.set_volume(value)
 
@@ -255,6 +276,32 @@ class KokoroApp(ctk.CTk):
     def _on_player_done(self):
         self.after(0, self._player_bar.on_playback_done)
         self.after(0, lambda: self._statusbar.set_status("Ready", "ok"))
+
+    # ── Clean shutdown ─────────────────────────────────────────────────────────
+
+    def _on_close(self):
+        """Called when the window X button is clicked. Stops all threads cleanly."""
+        import sys
+        import sounddevice as sd
+        try:
+            # Stop audio playback and release the sounddevice stream
+            self._player.stop()
+            sd.stop()
+        except Exception:
+            pass
+        try:
+            # Cancel any pending statusbar pulse timer
+            if hasattr(self._statusbar, "_pulse_after") and self._statusbar._pulse_after:
+                self.after_cancel(self._statusbar._pulse_after)
+                self._statusbar._pulse_after = None
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+        # Force-exit the process so background daemon threads don't keep it alive
+        sys.exit(0)
 
     # ── Save ───────────────────────────────────────────────────────────────────
 
