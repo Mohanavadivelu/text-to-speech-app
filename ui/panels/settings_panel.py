@@ -179,6 +179,8 @@ class SettingsPanel(ctk.CTkFrame):
     # ── public API ─────────────────────────────────────────────────────────────
 
     def update_voice_list(self, lang_key: str, voices: list):
+        # Store (voice_id, label) pairs for accurate lookup
+        self._voice_map = {label: vid for vid, label in voices}
         labels = [label for _, label in voices]
         self.voice_cb.configure(values=labels)
         if labels:
@@ -194,6 +196,11 @@ class SettingsPanel(ctk.CTkFrame):
 
     def get_voice_label(self) -> str:
         return self.voice_var.get()
+
+    def get_voice_id(self) -> str:
+        """Return the voice_id for the currently selected voice label."""
+        label = self.voice_var.get()
+        return getattr(self, "_voice_map", {}).get(label, "af_heart")
 
     def get_speed(self) -> float:
         return round(self.speed_var.get(), 1)

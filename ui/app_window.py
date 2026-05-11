@@ -107,10 +107,10 @@ class KokoroApp(ctk.CTk):
     def _update_voice_list(self, lang_key: str):
         voices = VOICES.get(lang_key, [])
         self._settings_panel.update_voice_list(lang_key, voices)
-        self._statusbar.set_voice(self._get_voice_id())
+        self._statusbar.set_voice(self._settings_panel.get_voice_id())
 
     def _on_voice_change(self, _label: str):
-        self._statusbar.set_voice(self._get_voice_id())
+        self._statusbar.set_voice(self._settings_panel.get_voice_id())
 
     def _on_voice_preview(self):
         """Generate and play a short sample with the currently selected voice."""
@@ -122,7 +122,7 @@ class KokoroApp(ctk.CTk):
 
         lang_key  = self._settings_panel.get_language_key()
         lang_code = LANG_CODES.get(lang_key, "a")
-        voice_id  = self._get_voice_id()
+        voice_id  = self._settings_panel.get_voice_id()
         speed     = self._settings_panel.get_speed()
         pitch     = self._settings_panel.get_pitch()
 
@@ -150,15 +150,6 @@ class KokoroApp(ctk.CTk):
         self._player_bar._play_btn.configure(text="⏸")
         self._statusbar.set_status("Playing preview…", "busy")
 
-    def _get_voice_id(self) -> str:
-        lang_key = self._settings_panel.get_language_key()
-        label = self._settings_panel.get_voice_label()
-        for vid, lbl in VOICES.get(lang_key, []):
-            if lbl == label:
-                return vid
-        voices = VOICES.get(lang_key, [])
-        return voices[0][0] if voices else "af_heart"
-
     # ── Generate ───────────────────────────────────────────────────────────────
 
     def _on_generate(self):
@@ -176,7 +167,7 @@ class KokoroApp(ctk.CTk):
 
         lang_key    = self._settings_panel.get_language_key()
         lang_code   = LANG_CODES.get(lang_key, "a")
-        voice_id    = self._get_voice_id()
+        voice_id    = self._settings_panel.get_voice_id()
         speed       = self._settings_panel.get_speed()
         pitch       = self._settings_panel.get_pitch()
         out_name    = self._settings_panel.get_output_filename()
