@@ -31,7 +31,8 @@ class KokoroApp(ctk.CTk):
         self.geometry(f"{WIN_W}x{WIN_H}")
         self.minsize(WIN_MIN_W, WIN_MIN_H)
         self.configure(fg_color=C["bg"])
-        self.state("zoomed")
+        # Always launch maximized
+        self.after(0, lambda: self.state("zoomed"))
 
         self._engine = TTSEngine()
         self._player = AudioPlayer()
@@ -85,6 +86,7 @@ class KokoroApp(ctk.CTk):
             body,
             on_language_change=self._update_voice_list,
             on_voice_change=self._on_voice_change,
+            on_voice_preview=self._on_voice_preview,
         )
         self._settings_panel.grid(row=0, column=1, sticky="nsew")
         self._settings_panel.configure(width=300)
@@ -110,6 +112,44 @@ class KokoroApp(ctk.CTk):
     def _on_voice_change(self, _label: str):
         self._statusbar.set_voice(self._get_voice_id())
 
+    def _on_voice_preview(self):
+        """Generate and play a short sample with the currently selected voice."""
+        _PREVIEW_TEXT = "Hi there!! This is a test voice."
+        if self._generating:
+            return
+        self._generating = True
+        self._statusbar.set_status("Previewing voice…", "busy")
+
+        lang_key  = self._settings_panel.get_language_key()
+        lang_code = LANG_CODES.get(lang_key, "a")
+        voice_id  = self._get_voice_id()
+        speed     = self._settings_panel.get_speed()
+        pitch     = self._settings_panel.get_pitch()
+
+        def _worker():
+            try:
+                audio, sr = self._engine.generate(
+                    _PREVIEW_TEXT, lang_code, voice_id, speed, pitch=pitch)
+                self.after(0, lambda: self._on_preview_done(audio, sr))
+            except Exception as exc:
+                log.exception("Preview failed: %s", exc)
+                self.after(0, lambda msg=str(exc): self._on_generate_error(msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_preview_done(self, audio, sr):
+        """Load preview audio into player and start playing immediately."""
+        self._generating = False
+        self._player.stop()
+        self._player.load(audio, sr)
+        self._player.play()
+        duration = len(audio) / sr
+        self._player_bar.set_audio_ready("preview", duration, sample_rate=sr)
+        self._player_bar.set_audio_data(audio, sr)
+        self._player_bar._playing = True
+        self._player_bar._play_btn.configure(text="⏸")
+        self._statusbar.set_status("Playing preview…", "busy")
+
     def _get_voice_id(self) -> str:
         lang_key = self._settings_panel.get_language_key()
         label = self._settings_panel.get_voice_label()
@@ -134,19 +174,21 @@ class KokoroApp(ctk.CTk):
         self._player_bar.set_generating(True)
         self._statusbar.set_status("Generating audio…", "busy")
 
-        lang_key  = self._settings_panel.get_language_key()
-        lang_code = LANG_CODES.get(lang_key, "a")
-        voice_id  = self._get_voice_id()
-        speed     = self._settings_panel.get_speed()
-        pitch     = self._settings_panel.get_pitch()
+        lang_key    = self._settings_panel.get_language_key()
+        lang_code   = LANG_CODES.get(lang_key, "a")
+        voice_id    = self._get_voice_id()
+        speed       = self._settings_panel.get_speed()
+        pitch       = self._settings_panel.get_pitch()
+        out_name    = self._settings_panel.get_output_filename()
+        output_path = os.path.join(_ROOT, f"{out_name}.wav")
 
         threading.Thread(
             target=self._generate_worker,
-            args=(text, lang_code, voice_id, speed, pitch),
+            args=(text, lang_code, voice_id, speed, pitch, output_path),
             daemon=True,
         ).start()
 
-    def _generate_worker(self, text, lang_code, voice_id, speed, pitch):
+    def _generate_worker(self, text, lang_code, voice_id, speed, pitch, output_path):
         try:
             first_chunk_played = threading.Event()
 
@@ -160,7 +202,6 @@ class KokoroApp(ctk.CTk):
                 """Stream first chunk to player immediately so playback starts early."""
                 if not first_chunk_played.is_set():
                     first_chunk_played.set()
-                    # Load just this chunk so the player can start right away
                     self.after(0, lambda a=chunk_audio: self._on_first_chunk(a))
 
             audio, sr = self._engine.generate(
@@ -168,8 +209,8 @@ class KokoroApp(ctk.CTk):
                 pitch=pitch, on_status=on_status, on_progress=on_progress,
                 on_chunk=on_chunk,
             )
-            self._engine.save(audio, sr, _DEFAULT_OUTPUT)
-            self.after(0, lambda: self._on_generate_done(audio, sr, _DEFAULT_OUTPUT, voice_id))
+            self._engine.save(audio, sr, output_path)
+            self.after(0, lambda: self._on_generate_done(audio, sr, output_path, voice_id))
         except Exception as exc:
             log.exception("Generation failed: %s", exc)
             self.after(0, lambda msg=str(exc): self._on_generate_error(msg))
@@ -198,7 +239,7 @@ class KokoroApp(ctk.CTk):
 
         self._text_panel.set_generating(False)
         self._player_bar.set_generating(False)
-        self._player_bar.set_audio_ready(filename, duration)
+        self._player_bar.set_audio_ready(filename, duration, sample_rate=sr)
         self._player_bar.set_audio_data(audio, sr)   # render waveform
 
         self._settings_panel.update_output_info(filename, meta)
