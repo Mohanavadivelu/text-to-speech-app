@@ -32,3 +32,5 @@ desktop.ini
 
 # Hugging Face model cache (large, downloaded at runtime)
 .cache/
+
+release/

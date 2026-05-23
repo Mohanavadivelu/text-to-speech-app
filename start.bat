@@ -114,27 +114,44 @@ for /f "eol=# tokens=1 delims=>[=[ " %%p in (%REQUIREMENTS%) do (
 echo.
 
 if "%MISSING%"=="1" (
-    :: Install PyTorch CPU-only first so kokoro does not pull in the CUDA build.
-    :: The CUDA build requires CUDA DLLs that cause c10.dll to fail on machines
-    :: without a GPU / CUDA toolkit installed.
+    :: Detect NVIDIA GPU — install CUDA build of PyTorch if available, else CPU.
     "%VENV%\Scripts\pip.exe" show torch >nul 2>&1
     if errorlevel 1 (
-        echo  [INFO] Installing PyTorch CPU build...
-        echo.
-        "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-        if errorlevel 1 (
+        nvidia-smi >nul 2>&1
+        if not errorlevel 1 (
+            echo  [INFO] NVIDIA GPU detected -- installing PyTorch CUDA build...
             echo.
-            echo  [ERROR] Failed to install PyTorch. Check your internet connection.
-            pause & exit /b 1
+            "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+            if errorlevel 1 (
+                echo.
+                echo  [WARN] CUDA build failed -- falling back to CPU build...
+                echo.
+                "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+                if errorlevel 1 (
+                    echo  [ERROR] Failed to install PyTorch. Check your internet connection.
+                    pause & exit /b 1
+                )
+                echo  [OK]   PyTorch CPU installed.
+            ) else (
+                echo  [OK]   PyTorch CUDA installed.
+            )
+        ) else (
+            echo  [INFO] No NVIDIA GPU detected -- installing PyTorch CPU build...
+            echo.
+            "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+            if errorlevel 1 (
+                echo.
+                echo  [ERROR] Failed to install PyTorch. Check your internet connection.
+                pause & exit /b 1
+            )
+            echo  [OK]   PyTorch CPU installed.
         )
-        echo.
-        echo  [OK]   PyTorch CPU installed.
         echo.
     )
 
     echo  [INFO] Installing remaining packages from requirements.txt...
     echo.
-    "%VENV%\Scripts\pip.exe" install -r "%REQUIREMENTS%" --extra-index-url https://download.pytorch.org/whl/cpu
+    "%VENV%\Scripts\pip.exe" install -r "%REQUIREMENTS%"
     if errorlevel 1 (
         echo.
         echo  [ERROR] Installation failed. Check the output above for details.
@@ -145,25 +162,11 @@ if "%MISSING%"=="1" (
     echo.
 )
 
-:: ── 3b. Verify torch is CPU build (not CUDA) ────────────────────────────────
+:: ── 3b. Report active torch build ───────────────────────────────────────────
 "%VENV%\Scripts\pip.exe" show torch >nul 2>&1
 if not errorlevel 1 (
-    "%VENV%\Scripts\python.exe" -c "import torch; exit(1 if torch.version.cuda else 0)" >nul 2>&1
-    if errorlevel 1 (
-        echo  [WARN] CUDA build of PyTorch detected -- reinstalling CPU build...
-        echo.
-        "%VENV%\Scripts\pip.exe" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu --force-reinstall
-        if errorlevel 1 (
-            echo  [ERROR] Failed to reinstall PyTorch CPU build.
-            pause & exit /b 1
-        )
-        echo.
-        echo  [OK]   PyTorch CPU build installed.
-        echo.
-    ) else (
-        echo  [OK]   PyTorch CPU build confirmed.
-        echo.
-    )
+    "%VENV%\Scripts\python.exe" -c "import torch; cuda=torch.cuda.is_available(); print('  [OK]   PyTorch', torch.__version__, '| CUDA available:', cuda, '| Device:', 'CUDA' if cuda else 'CPU')"
+    echo.
 )
 
 :: ── 4. Activate venv ─────────────────────────────────────────────────────────
