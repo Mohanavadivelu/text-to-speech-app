@@ -250,7 +250,7 @@ class KokoroApp(ctk.CTk):
 
     def _on_play(self):
         # Allow playback if full audio is ready OR if a streaming chunk is loaded
-        if self._audio_data is None and self._player._audio is None:
+        if self._audio_data is None and not self._player.has_audio:
             return
         self._player.play()
         self._statusbar.set_status("Playing…", "busy")
@@ -268,13 +268,7 @@ class KokoroApp(ctk.CTk):
         # Restart playback from the seeked position
         if self._audio_data is None:
             return
-        was_playing = self._player.is_playing
-        self._player.stop()
-        total = len(self._audio_data)
-        self._player._start_sample = int(ratio * total)
-        self._player._position = ratio
-        if was_playing:
-            self._player.play()
+        self._player.seek(ratio)
 
     def _on_skip_back(self):
         """Skip back 5 seconds."""

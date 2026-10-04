@@ -103,6 +103,23 @@ def _split_paragraphs(text: str, max_chars: int = _MAX_SEGMENT_CHARS) -> list[st
     return segments or [text]
 
 
+def _pitch_factor(semitones: float) -> float:
+    return 2.0 ** (semitones / 12.0)
+
+
+def _pitch_shift(audio: np.ndarray, factor: float) -> np.ndarray:
+    """Resample *audio* so it plays *factor* times higher (and shorter).
+
+    Combined with generating speech at speed / factor, the net effect is a
+    pitch change with the original duration preserved.
+    """
+    if factor == 1.0 or len(audio) < 2:
+        return audio
+    n_out = max(1, int(round(len(audio) / factor)))
+    src = np.linspace(0, len(audio) - 1, n_out, dtype=np.float64)
+    return np.interp(src, np.arange(len(audio)), audio).astype(np.float32)
+
+
 class TTSEngine:
     def __init__(self):
         self._pipeline = None
@@ -140,17 +157,24 @@ class TTSEngine:
     # ── Audio helpers ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _run_pipeline(pipeline, text: str, voice_id: str, speed: float) -> np.ndarray:
-        """Run pipeline with inference_mode for maximum speed (no gradient tracking)."""
+    def _run_pipeline(pipeline, text: str, voice_id: str, speed: float,
+                      pitch: float = 0.0) -> np.ndarray:
+        """Run pipeline with inference_mode for maximum speed (no gradient tracking).
+
+        *pitch* is in semitones. Speech is generated slower or faster by the
+        pitch factor, then resampled back, so the chosen speed is preserved.
+        """
+        factor = _pitch_factor(pitch)
         chunks = []
         with torch.inference_mode():
-            for _gs, _ps, audio in pipeline(text, voice=voice_id, speed=speed):
+            for _gs, _ps, audio in pipeline(text, voice=voice_id, speed=speed / factor):
                 if hasattr(audio, "numpy"):
                     audio = audio.detach().cpu().numpy()
                 chunks.append(np.asarray(audio, dtype=np.float32))
         if not chunks:
             return np.zeros(0, dtype=np.float32)
-        return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+        audio = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+        return _pitch_shift(audio, factor)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -171,8 +195,8 @@ class TTSEngine:
 
         segments = _split_paragraphs(text)
         total_segs = len(segments)
-        log.info("Generating %d segment(s) for %d chars, voice=%s speed=%s device=%s",
-                 total_segs, len(text), voice_id, speed, DEVICE)
+        log.info("Generating %d segment(s) for %d chars, voice=%s speed=%s pitch=%+.1f device=%s",
+                 total_segs, len(text), voice_id, speed, pitch, DEVICE)
 
         if on_status:
             on_status(f"Generating… 0 / {total_segs} segments [{DEVICE.upper()}]")
@@ -183,7 +207,7 @@ class TTSEngine:
             # ── Single-threaded path (GPU or single-core CPU) ─────────────────
             for i, seg in enumerate(segments):
                 with self._lock:
-                    audio = self._run_pipeline(pipeline, seg, voice_id, speed)
+                    audio = self._run_pipeline(pipeline, seg, voice_id, speed, pitch)
                 all_chunks[i] = audio
                 if on_chunk:
                     on_chunk(audio)
@@ -208,11 +232,11 @@ class TTSEngine:
                 nonlocal done_count
                 if idx % 2 == 0:
                     with self._lock:
-                        audio = self._run_pipeline(pipeline, seg, voice_id, speed)
+                        audio = self._run_pipeline(pipeline, seg, voice_id, speed, pitch)
                 else:
                     aux = self._get_aux_pipeline(lang_code)
                     with self._aux_lock:
-                        audio = self._run_pipeline(aux, seg, voice_id, speed)
+                        audio = self._run_pipeline(aux, seg, voice_id, speed, pitch)
                 return idx, audio
 
             with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
