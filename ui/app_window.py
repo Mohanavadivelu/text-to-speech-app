@@ -374,6 +374,12 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         self._cancel_event = None
         self._text_panel.set_generating(False)
         self._player_bar.set_generating(False)
+        self._restore_previous_audio()
+        self._statusbar.set_status("Generation cancelled", "ok")
+        Toast(self, "Generation cancelled", kind="info")
+
+    def _restore_previous_audio(self):
+        """Drop any half-streamed clip and show the last finished audio again."""
         if self._audio_data is not None:
             self._player.load(self._audio_data, SAMPLE_RATE)
             name = os.path.basename(self._audio_path) if self._audio_path else "audio"
@@ -382,8 +388,6 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         else:
             self._player.unload()
             self._player_bar.set_no_audio()
-        self._statusbar.set_status("Generation cancelled", "ok")
-        Toast(self, "Generation cancelled", kind="info")
 
     def _on_first_chunk(self, chunk_audio):
         """Load the first audio chunk into the player so playback can start immediately."""
@@ -421,10 +425,13 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         Toast(self, f"Saved to {filename}", kind="info")
 
     def _on_generate_error(self, msg: str):
+        was_generating = self._cancel_event is not None
         self._generating = False
         self._cancel_event = None
         self._text_panel.set_generating(False)
         self._player_bar.set_generating(False)
+        if was_generating:
+            self._restore_previous_audio()
         self._statusbar.set_status(f"Error: {msg}", "error")
         Toast(self, f"Error: {msg}", kind="error")
 
@@ -526,18 +533,28 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
     # ── Save ───────────────────────────────────────────────────────────────────
 
     def _on_save(self):
-        if self._audio_data is None:
+        if self._audio_data is None or self._generating or not self._player_bar.can_save:
             return
+        suggested = os.path.basename(self._audio_path) if self._audio_path else "kokoro_output.wav"
         path = filedialog.asksaveasfilename(
             defaultextension=".wav",
             filetypes=[("WAV audio", "*.wav"), ("All files", "*.*")],
-            initialfile="kokoro_output.wav",
+            initialfile=suggested,
             title="Save Audio As",
+            parent=self,
         )
-        if path:
+        if not path:
+            return
+        try:
             self._engine.save(self._audio_data, SAMPLE_RATE, path)
-            self._statusbar.set_status(f"Saved → {os.path.basename(path)}", "ok")
-            Toast(self, f"Saved to {os.path.basename(path)}", kind="info")
+        except Exception as exc:
+            log.exception("Save failed")
+            self._statusbar.set_status(f"Could not save: {exc}", "error")
+            Toast(self, f"Could not save: {exc}", kind="error")
+            return
+        self._player_bar.flash_saved()
+        self._statusbar.set_status(f"Saved → {os.path.basename(path)}", "ok")
+        Toast(self, f"Saved to {os.path.basename(path)}", kind="info")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import customtkinter as ctk
 from ui.theme import C, FONT_SMALL, FONT_TINY, FONT_MONO, FONT_LABEL, FONT_NORMAL
 from ui.components.player_waveform import PlayerWaveformCanvas
 from ui.components.play_button import PlayPauseButton
+from ui.components.icon_button import IconButton
 
 
 class PlayerBar(ctk.CTkFrame):
@@ -27,6 +28,8 @@ class PlayerBar(ctk.CTkFrame):
         self._duration  = 0.0
         self._seeking   = False
         self._sample_rate = 24000
+        self._has_audio = False     # something is loaded in the player
+        self._generating = False    # a generation is running
         self._build()
         self.set_no_audio()
 
@@ -90,13 +93,8 @@ class PlayerBar(ctk.CTkFrame):
         self._fmt_label.pack(side="left", padx=(0, 10))
 
         # Right side: volume + save
-        self._save_btn = ctk.CTkButton(
-            ctrl_row, text="💾  Save As…",
-            fg_color=C["surface2"], text_color=C["btn_save"],
-            border_color=C["btn_save"], border_width=1,
-            hover_color=C["surface3"], corner_radius=50,
-            font=FONT_LABEL, command=self._do_save,
-        )
+        self._save_btn = IconButton(ctrl_row, text="Save As…", icon_name="output",
+                                    command=self._do_save, bg_color=C["surface2"])
         self._save_btn.pack(side="right", padx=(8, 0))
 
         self._vol_slider = ctk.CTkSlider(
@@ -119,8 +117,8 @@ class PlayerBar(ctk.CTkFrame):
     # ── public state API ───────────────────────────────────────────────────────
 
     def set_no_audio(self):
-        self._set_controls_enabled(False)
-        self._save_btn.configure(state="disabled")
+        self._has_audio = False
+        self._refresh_states()
         self._cur_time_big.configure(text="00:00")
         self._total_time_small.configure(text="00:00.0")
         self._time_label.configure(text="00:00:00 / 00:00:00")
@@ -142,8 +140,8 @@ class PlayerBar(ctk.CTkFrame):
         kbps = (sample_rate * 32) // 1000
         self._bitrate_label.configure(text=f"WAV {kbps}kbps {sample_rate // 1000}kHz")
         self._fmt_label.configure(text="WAV")
-        self._set_controls_enabled(True)
-        self._save_btn.configure(state="normal")
+        self._has_audio = True
+        self._refresh_states()
         self._play_btn.set_playing(False)
         self._playing = False
 
@@ -152,8 +150,15 @@ class PlayerBar(ctk.CTkFrame):
         self._waveform.set_audio(audio, sample_rate)
 
     def set_generating(self, generating: bool):
-        self._set_controls_enabled(not generating)
-        self._save_btn.configure(state="disabled" if generating else "normal")
+        self._generating = generating
+        self._refresh_states()
+
+    def flash_saved(self):
+        self._save_btn.flash("Saved ✓")
+
+    @property
+    def can_save(self) -> bool:
+        return self._save_btn.enabled
 
     def update_progress(self, position_ratio: float, duration: float):
         if self._seeking:
@@ -194,8 +199,11 @@ class PlayerBar(ctk.CTkFrame):
 
     # ── internal helpers ───────────────────────────────────────────────────────
 
-    def _set_controls_enabled(self, enabled: bool):
-        self._play_btn.set_enabled(enabled)
+    def _refresh_states(self):
+        """Play needs audio loaded; Save also needs generation to be finished,
+        so a half-streamed clip (or stale audio) can never be saved."""
+        self._play_btn.set_enabled(self._has_audio)
+        self._save_btn.set_enabled(self._has_audio and not self._generating)
 
     def _do_save(self):
         if self._on_save:
