@@ -17,6 +17,10 @@ DEFAULTS = {
     "speed": 1.0,
     "pitch": 0.0,
     "text_font_size": 11,
+    "engine": "Auto",            # Auto / GPU / CPU
+    "perf_mode": "Maximum",      # CPU engine: Maximum / Balanced / Quiet
+    "quiet_on_battery": True,
+    "gpu_verified": False,       # GPU pack passed its self-test
 }
 
 

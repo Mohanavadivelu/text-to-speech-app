@@ -29,6 +29,10 @@ def main():
     for old, new in moved:
         log.info("Moved %s -> %s", old, new)
 
+    from core import gpu_pack
+    if gpu_pack.process_pending_removal():     # before anything can load torch
+        log.info("Removed the GPU pack as requested")
+
     from core.engine import log_device_info
     log_device_info()
 

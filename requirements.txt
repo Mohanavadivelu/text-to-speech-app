@@ -1,7 +1,15 @@
+# Base app (CPU engine). PyTorch is NOT listed: it comes with the optional
+# GPU pack, which the app downloads itself (see core/gpu_pack.py).
 numpy>=2.0
+onnxruntime>=1.20
 soundfile
 sounddevice
-kokoro
+misaki==0.9.4
+spacy>=3.8
+num2words
+espeakng-loader
+phonemizer-fork
+loguru
 customtkinter>=5.2.0
 tkinterdnd2
 python-docx

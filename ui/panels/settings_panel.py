@@ -15,7 +15,8 @@ class SettingsPanel(ctk.CTkFrame):
     """Right panel: language, voice, voice mix, speed, pitch, output filename."""
 
     def __init__(self, parent, on_language_change=None, on_voice_change=None,
-                 on_voice_preview=None, on_change=None, **kwargs):
+                 on_voice_preview=None, on_change=None, on_engine_change=None,
+                 on_gpu_install=None, on_gpu_remove=None, on_gpu_retest=None, **kwargs):
         super().__init__(parent, fg_color=C["surface"],
                          border_color=C["border"], border_width=1,
                          corner_radius=12, width=300, **kwargs)
@@ -24,6 +25,11 @@ class SettingsPanel(ctk.CTkFrame):
         self._on_voice_change = on_voice_change
         self._on_voice_preview = on_voice_preview
         self._on_change = on_change
+        self._on_engine_change = on_engine_change
+        self._on_gpu_install = on_gpu_install
+        self._on_gpu_remove = on_gpu_remove
+        self._on_gpu_retest = on_gpu_retest
+        self._gpu_action = None
         self._voice_map: dict = {}    # label -> voice_id for the current language
         self._build()
 
@@ -140,6 +146,41 @@ class SettingsPanel(ctk.CTkFrame):
 
         ctk.CTkFrame(body, fg_color=C["border"], height=1,
                      corner_radius=0).grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
+
+        # Engine: CPU (built in) or GPU pack, plus CPU performance mode
+        self._engine_val = self._section(body, r, "engine", "ENGINE", value_text=""); r += 1
+        eng_row = ctk.CTkFrame(body, fg_color=C["surface"])
+        eng_row.grid(row=r, column=0, sticky="ew", pady=(0, 6)); r += 1
+        eng_row.grid_columnconfigure((0, 1), weight=1)
+        self.engine_var = ctk.StringVar(value="Auto")
+        self.engine_menu = self._menu(eng_row, self.engine_var, self._on_engine_selected)
+        self.engine_menu.configure(values=["Auto", "CPU"])
+        self.engine_menu.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.perf_var = ctk.StringVar(value="Maximum")
+        self.perf_menu = self._menu(eng_row, self.perf_var, self._on_engine_selected)
+        self.perf_menu.configure(values=["Maximum", "Balanced", "Quiet"])
+        self.perf_menu.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        self.battery_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(body, text="Quiet mode on battery", variable=self.battery_var,
+                        font=FONT_TINY, text_color=C["text2"], checkbox_width=16, checkbox_height=16,
+                        border_width=1, fg_color=C["accent"], hover_color=C["accent_h"],
+                        command=self._on_engine_selected).grid(row=r, column=0, sticky="w", pady=(0, 8)); r += 1
+
+        self._gpu_card = ctk.CTkFrame(body, fg_color=C["surface2"], corner_radius=8,
+                                      border_color=C["border"], border_width=1)
+        self._gpu_card.grid(row=r, column=0, sticky="ew", pady=(0, 14)); self._gpu_row = r; r += 1
+        self._gpu_card.grid_columnconfigure(0, weight=1)
+        self._gpu_title = ctk.CTkLabel(self._gpu_card, text="GPU pack", font=FONT_NORMAL,
+                                       text_color=C["text"], anchor="w")
+        self._gpu_title.grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
+        self._gpu_text = ctk.CTkLabel(self._gpu_card, text="", font=FONT_TINY, text_color=C["text3"],
+                                      anchor="w", justify="left", wraplength=230)
+        self._gpu_text.grid(row=1, column=0, sticky="w", padx=10)
+        self._gpu_btn = ctk.CTkButton(self._gpu_card, text="", font=FONT_SMALL, height=28,
+                                      fg_color=C["surface3"], hover_color=C["border2"], text_color=C["text"],
+                                      corner_radius=6, command=self._on_gpu_button)
+        self._gpu_btn.grid(row=2, column=0, sticky="ew", padx=10, pady=(6, 10))
+        self._gpu_card.grid_remove()
 
         # Output: fixed folder, files named by date and time
         self._section(body, r, "output", "OUTPUT"); r += 1
@@ -259,7 +300,45 @@ class SettingsPanel(ctk.CTkFrame):
         if notify:
             self._notify()
 
+    def _on_engine_selected(self, _value=None):
+        if self._on_engine_change:
+            self._on_engine_change()
+        self._notify()
+
+    def _on_gpu_button(self):
+        callback = {"install": self._on_gpu_install, "remove": self._on_gpu_remove,
+                    "retest": self._on_gpu_retest}.get(self._gpu_action)
+        if callback:
+            callback()
+
     # ── public API ────────────────────────────────────────────────────────────
+
+    def get_engine_settings(self) -> dict:
+        return {"engine": self.engine_var.get(), "perf_mode": self.perf_var.get(),
+                "quiet_on_battery": bool(self.battery_var.get())}
+
+    def set_engine_status(self, label: str):
+        self._engine_val.configure(text=label)
+
+    def set_gpu_card(self, visible: bool, title: str = "", text: str = "", action: str = None,
+                     button: str = "", installed: bool = False):
+        """Show the GPU pack card. action: install / remove / retest / None."""
+        self.engine_menu.configure(values=["Auto", "GPU", "CPU"] if installed else ["Auto", "CPU"])
+        if not installed and self.engine_var.get() == "GPU":
+            self.engine_var.set("Auto")
+        if not visible:
+            self._gpu_card.grid_remove()
+            return
+        self._gpu_title.configure(text=title)
+        self._gpu_text.configure(text=text)
+        self._gpu_action = action
+        if action:
+            self._gpu_btn.configure(text=button, state="normal")
+            self._gpu_btn.grid()
+        else:
+            self._gpu_btn.grid_remove()
+        self._gpu_card.grid()
+        self.after_idle(self._refresh_scrollbar)
 
     def update_voice_list(self, lang_key: str, voices: list, selected: str = None):
         """Fill the voice menu for *lang_key*; select *selected* (a voice id) if present."""
@@ -312,6 +391,7 @@ class SettingsPanel(ctk.CTkFrame):
             "blend_ratio": ratio if blend_voice else round(self.blend_var.get(), 2),
             "speed": self.get_speed(),
             "pitch": self.get_pitch(),
+            **self.get_engine_settings(),
         }
 
     def apply_state(self, state: dict):
@@ -337,9 +417,16 @@ class SettingsPanel(ctk.CTkFrame):
         self._on_speed_change(self.speed_var.get(), notify=False)
         self._on_pitch_change(self.pitch_var.get(), notify=False)
         self._update_mix_visibility()
+        if state.get("engine") in ("Auto", "GPU", "CPU"):
+            self.engine_var.set(state["engine"])
+        if state.get("perf_mode") in ("Maximum", "Balanced", "Quiet"):
+            self.perf_var.set(state["perf_mode"])
+        self.battery_var.set(bool(state.get("quiet_on_battery", True)))
 
     def reset_to_defaults(self):
         self.apply_state(app_settings.DEFAULTS)
+        if self._on_engine_change:
+            self._on_engine_change()
         if self._on_language_change:
             self._on_language_change(self.get_language_key())
         self._notify()

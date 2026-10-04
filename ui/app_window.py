@@ -14,8 +14,10 @@ from ui.panels.player_bar import PlayerBar
 from ui.panels.statusbar import StatusBar
 from ui.components.toast import Toast
 from ui.components.pronunciation_dialog import PronunciationDialog
+from ui.components.download_dialog import DownloadDialog
 
-from core.engine import TTSEngine, GenerationCancelled, SAMPLE_RATE, DEVICE, log_device_info
+from core.engine import TTSEngine, GenerationCancelled, SAMPLE_RATE
+from core import gpu_pack, model_store, hardware
 from core import text_tools, paths
 from core.logging_setup import log_tk_exception
 from core.player import AudioPlayer
@@ -67,6 +69,10 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         self._cancel_event = None
         self._pronunciations = text_tools.load_pronunciations()
         self._pron_dialog = None
+        self._idle_after = None
+        self._gpu_verified = False
+        self._gpu_message = ""
+        self._busy_dialog = False
 
         self._audio_data = None
         self._audio_path = None
@@ -77,14 +83,15 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         self._settings_panel.apply_state(saved)
         self._text_panel.set_font_size(saved.get("text_font_size", 11), notify=False)
         self._text_panel.load_draft(text_tools.load_draft())
-        self._update_voice_list(self._settings_panel.get_language_key())
+        self._gpu_verified = bool(saved.get("gpu_verified")) and gpu_pack.is_installed()
+        self._on_engine_change(save=False)
         if self._dnd_ready:
             self._text_panel.enable_drop(self._open_files)
         self._bind_shortcuts()
         # Clean shutdown when the window X button is clicked
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        # Show device info toast after window is fully drawn
-        self.after(500, self._show_device_toast)
+        # First run: download the voice model; otherwise show which engine is in use
+        self.after(600, lambda: self._ensure_model(then=self._show_device_toast) and self._show_device_toast())
 
     # ── Layout ─────────────────────────────────────────────────────────────────
 
@@ -126,6 +133,10 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
             on_voice_change=self._on_voice_change,
             on_voice_preview=self._on_voice_preview,
             on_change=self._schedule_settings_save,
+            on_engine_change=self._on_engine_change,
+            on_gpu_install=self._on_gpu_install,
+            on_gpu_remove=self._on_gpu_remove,
+            on_gpu_retest=self._run_gpu_self_test,
         )
         self._settings_panel.grid(row=0, column=1, sticky="nsew")
         self._settings_panel.configure(width=300)
@@ -147,16 +158,162 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
             text.bind(seq, lambda _e, f=fn: (f(), "break")[1])
 
     def _show_device_toast(self):
-        from core.engine import DEVICE, TTSEngine
-        info = TTSEngine.device_info()
-        kind = "info" if DEVICE == "cuda" else "error"
-        Toast(self, info, kind=kind)
+        Toast(self, f"Engine: {self._engine.device_label()}", kind="info")
+
+    # ── Engine, model download and GPU pack ────────────────────────────────────
+
+    def _ensure_model(self, then=None) -> bool:
+        """True if the voice model is ready now. Otherwise start the download and
+        return False; *then* runs only after a successful download."""
+        if self._engine.model_ready():
+            return True
+        if self._busy_dialog:
+            return False
+        self._busy_dialog = True
+        size = model_store.total_bytes(model_store.missing(model_store.onnx_files())) / 1e6
+        self._statusbar.set_status("Downloading the voice model…", "busy")
+
+        def done(ok):
+            self._busy_dialog = False
+            if ok:
+                self._statusbar.set_status("Voice model ready", "ok")
+                Toast(self, "Voice model downloaded — ready to generate", kind="info")
+                if then:
+                    then()
+            else:
+                self._statusbar.set_status("Voice model not downloaded — Generate will ask again", "error")
+
+        DownloadDialog(self, "Downloading the voice model",
+                       f"Kokoro needs its voice model ({size:,.0f} MB) once. After this the app works offline.",
+                       lambda progress, cancel: model_store.fetch_all(model_store.onnx_files(), progress, cancel),
+                       on_done=done)
+        return False
+
+    def _on_engine_change(self, save: bool = True):
+        cfg = self._settings_panel.get_engine_settings()
+        self._engine.configure(choice=cfg["engine"], perf_mode=cfg["perf_mode"],
+                               quiet_on_battery=cfg["quiet_on_battery"], gpu_verified=self._gpu_verified)
+        self._refresh_engine_ui()
+        if save:
+            self._schedule_settings_save()
+
+    def _refresh_engine_ui(self):
+        label = self._engine.device_label()
+        self._settings_panel.set_engine_status(label)
+        self._statusbar.set_device(label)
+        installed = gpu_pack.is_installed()
+        ok, gpu, reason = gpu_pack.eligibility()
+        size_gb = gpu_pack.download_bytes() / 1e9
+        name = hardware.short_gpu_name(gpu.name) if gpu else "GPU"
+        if gpu_pack.removal_pending():
+            self._settings_panel.set_gpu_card(True, "GPU pack", "Will be removed when you restart the app.",
+                                              installed=False)
+        elif installed:
+            if self._gpu_verified:
+                text = f"Installed · {name}. Auto uses the GPU; CPU stays available as a fallback."
+                self._settings_panel.set_gpu_card(True, "GPU pack", text, "remove", "Remove GPU pack", installed=True)
+            else:
+                text = self._gpu_message or "Installed, but the GPU self-test has not passed yet."
+                self._settings_panel.set_gpu_card(True, "GPU pack", text, "retest", "Run GPU test", installed=True)
+        elif gpu_pack.is_outdated() and ok:
+            self._settings_panel.set_gpu_card(True, "GPU pack", "Your GPU pack is from an older app version.",
+                                              "install", f"Update GPU pack ({size_gb:.1f} GB)")
+        elif ok:
+            self._settings_panel.set_gpu_card(
+                True, f"GPU pack · {name}",
+                f"PyTorch + CUDA for your NVIDIA GPU — about 10x faster than the CPU. {size_gb:.1f} GB download.",
+                "install", f"Download GPU pack ({size_gb:.1f} GB)")
+        elif gpu is not None:
+            self._settings_panel.set_gpu_card(True, f"GPU pack · {name}", f"Not available: {reason}")
+        else:
+            self._settings_panel.set_gpu_card(False)
+
+    def _on_gpu_install(self):
+        if self._generating or self._busy_dialog:
+            return
+        size_gb = gpu_pack.download_bytes() / 1e9
+        if not messagebox.askyesno(
+                "Download GPU pack",
+                f"Download PyTorch with CUDA for your NVIDIA GPU?\n\n"
+                f"Download: about {size_gb:.1f} GB · Disk space: about 4.5 GB\n"
+                f"Files come from download.pytorch.org, PyPI and Hugging Face.\n\n"
+                f"It takes a few minutes. The CPU engine stays available if anything goes wrong.",
+                parent=self):
+            return
+        self._busy_dialog = True
+
+        def done(ok):
+            self._busy_dialog = False
+            if ok:
+                self._run_gpu_self_test()
+            else:
+                self._statusbar.set_status("GPU pack not installed", "ok")
+                self._refresh_engine_ui()
+
+        DownloadDialog(self, "Downloading the GPU pack",
+                       "Installing PyTorch with CUDA and the GPU voice model. Completed files are kept if you cancel.",
+                       lambda progress, cancel: gpu_pack.install(progress, cancel), on_done=done)
+
+    def _run_gpu_self_test(self):
+        if self._generating:
+            return
+        self._generating = True
+        self._statusbar.set_status("Testing the GPU engine…", "busy")
+        self._settings_panel.set_gpu_card(True, "GPU pack", "Testing the GPU engine…", installed=True)
+
+        def worker():
+            try:
+                gpu = self._engine.gpu_engine()
+                ok, msg = (False, "GPU pack could not be loaded.") if gpu is None else \
+                    gpu_pack.self_test(gpu, self._engine.cpu)
+            except Exception as exc:
+                log.exception("GPU self-test crashed")
+                ok, msg = False, f"GPU test failed: {exc}"
+            self.after(0, lambda: self._on_gpu_test_done(ok, msg))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_gpu_test_done(self, ok, msg):
+        self._generating = False
+        self._gpu_verified = ok
+        self._gpu_message = "" if ok else msg
+        self._on_engine_change()
+        self._statusbar.set_status(msg, "ok" if ok else "error")
+        Toast(self, msg if ok else f"{msg} Using the CPU engine.", kind="info" if ok else "error")
+
+    def _on_gpu_remove(self):
+        if self._generating:
+            return
+        mb = gpu_pack.installed_size_mb()
+        if not messagebox.askyesno("Remove GPU pack",
+                                   f"Remove the GPU pack and free about {mb / 1024:.1f} GB?\n"
+                                   "The app keeps working on the CPU.", parent=self):
+            return
+        self._gpu_verified = False
+        self._gpu_message = ""
+        if gpu_pack.removal_needs_restart():
+            gpu_pack.request_removal()
+            Toast(self, "GPU pack will be removed when you restart the app", kind="info")
+        else:
+            gpu_pack.remove()
+            Toast(self, "GPU pack removed", kind="info")
+        self._on_engine_change()
+
+    def _schedule_idle_release(self, minutes: int = 10):
+        """Free model memory after a while without generating."""
+        if self._idle_after:
+            self.after_cancel(self._idle_after)
+        self._idle_after = self.after(minutes * 60_000, self._idle_release)
+
+    def _idle_release(self):
+        self._idle_after = None
+        if not self._generating:
+            self._engine.release()
 
     # ── Voice helpers ──────────────────────────────────────────────────────────
 
     def _update_voice_list(self, lang_key: str):
-        """Called after the language changes: fetch its voices for offline use."""
-        self._engine.prefetch_voices([vid for vid, _ in VOICES.get(lang_key, [])])
+        """Language changed. All voices are downloaded with the model, so nothing to fetch."""
 
     def _schedule_settings_save(self):
         """Debounce saves so dragging a slider writes the file once."""
@@ -168,6 +325,7 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         self._save_after = None
         state = self._settings_panel.get_state()
         state["text_font_size"] = self._text_panel.font_size
+        state["gpu_verified"] = self._gpu_verified
         app_settings.save(state)
         self._text_panel.refresh_counts()   # speed/language change the audio estimate
 
@@ -238,6 +396,8 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
             return
         if self._generating:
             return
+        if not self._ensure_model():
+            return
         self._generating = True
         if self._player.is_playing:
             self._player.pause()
@@ -268,6 +428,7 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
     def _on_preview_done(self, audio, sr):
         """Play the preview on its own player; the main player keeps its audio."""
         self._generating = False
+        self._schedule_idle_release()
         self._preview_player.load(audio, sr)
         self._preview_player.play()
         self._settings_panel.set_preview_state("playing")
@@ -291,6 +452,8 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         if not text:
             Toast(self, "Please enter some text first.", kind="error")
             return
+        if not self._ensure_model(then=self._on_generate):
+            return
 
         lang_key    = self._settings_panel.get_language_key()
         lang_code   = LANG_CODES.get(lang_key, "a")
@@ -300,7 +463,7 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
                 "Long text",
                 f"This is about {text_tools.format_duration(audio_est)} of audio.\n"
                 f"Generating it will take roughly {text_tools.format_duration(gen_est)} "
-                f"on your {DEVICE.upper()}.\n\nYou can cancel at any time. Continue?",
+                f"on {self._engine.device_label()}.\n\nYou can cancel at any time. Continue?",
                 parent=self):
             return
 
@@ -401,6 +564,11 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
 
     def _on_generate_done(self, audio, sr, path, voice_id):
         self._generating = False
+        self._schedule_idle_release()
+        fallback = self._engine.take_fallback_notice()
+        if fallback:
+            Toast(self, "The GPU failed, so this was generated on the CPU. See the log for details.",
+                  kind="error")
         self._cancel_event = None
         self._audio_data = audio
         self._audio_path = path
@@ -479,7 +647,9 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         self._player.set_volume(value)
 
     def _on_space(self, event):
-        focused = self.focus_get()
+        # The key event's widget is where the key was pressed; focus_get() can be
+        # None when the window isn't active.
+        focused = getattr(event, "widget", None) or self.focus_get()
         if isinstance(focused, (tk.Text, tk.Entry)):
             return   # typing a space, not a playback shortcut
         self._player_bar.toggle_play()

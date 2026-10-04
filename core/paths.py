@@ -3,6 +3,8 @@
     <root>/audio_output/   generated speech, named ddmmyyyy_HHMMSS.wav
     <root>/logs/           rotating log files
     <root>/user_data/      settings.json, draft.txt, pronunciations.json
+    <root>/models/         voice model files, downloaded on first run
+    <root>/engines/        optional GPU pack (PyTorch + CUDA), installed from the app
 
 <root> is the project folder, or the folder holding KokoroTTS.exe when the
 app runs as a PyInstaller build (the bundle's own folder is read-only).
@@ -23,6 +25,8 @@ else:
 AUDIO_DIR = os.path.join(ROOT, "audio_output")
 LOGS_DIR = os.path.join(ROOT, "logs")
 USER_DATA_DIR = os.path.join(ROOT, "user_data")
+MODELS_DIR = os.path.join(ROOT, "models")
+ENGINES_DIR = os.path.join(ROOT, "engines")
 
 SETTINGS_PATH = os.path.join(USER_DATA_DIR, "settings.json")
 DRAFT_PATH = os.path.join(USER_DATA_DIR, "draft.txt")
@@ -33,7 +37,7 @@ OUTPUT_NAME_FORMAT = "%d%m%Y_%H%M%S"   # e.g. 04102026_203015
 
 
 def ensure_dirs():
-    for d in (AUDIO_DIR, LOGS_DIR, USER_DATA_DIR):
+    for d in (AUDIO_DIR, LOGS_DIR, USER_DATA_DIR, MODELS_DIR):
         os.makedirs(d, exist_ok=True)
 
 

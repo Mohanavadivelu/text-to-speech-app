@@ -31,22 +31,16 @@ class StatusBar(ctk.CTkFrame):
         right = ctk.CTkFrame(inner, fg_color=C["titlebar"])
         right.pack(side="right")
 
-        from core.engine import DEVICE
-        import torch
-        if DEVICE == "cuda":
-            # Shorten to "CUDA · RTX 3050 Ti" style (strip "NVIDIA GeForce " prefix)
-            full = torch.cuda.get_device_name(0)
-            short = full.replace("NVIDIA GeForce ", "").replace(" Laptop GPU", "")
-            dev_info = f"CUDA · {short}"
-        else:
-            import os
-            dev_info = f"CPU · {os.cpu_count()} threads"
         # Icon and text are separate labels: Tk under-measures the emoji's
         # width, which clipped the last letter when they shared one label.
-        ctk.CTkLabel(right, text=dev_info, font=FONT_TINY,
-                     text_color=C["text3"]).pack(side="right", padx=(0, 2))
+        self._device_lbl = ctk.CTkLabel(right, text="CPU", font=FONT_TINY, text_color=C["text3"])
+        self._device_lbl.pack(side="right", padx=(0, 2))
         ctk.CTkLabel(right, text="🖥", font=FONT_TINY,
                      text_color=C["text3"]).pack(side="right", padx=(0, 6))
+
+    def set_device(self, label: str):
+        """Engine in use, e.g. "CPU · Maximum" or "GPU · RTX 3050 Ti"."""
+        self._device_lbl.configure(text=label)
 
     def set_status(self, message: str, state: str = "ok"):
         colours = {"ok": C["status_ok"], "busy": C["status_busy"], "error": C["status_err"]}

@@ -4,9 +4,12 @@ setlocal EnableDelayedExpansion
 :: ===========================================================================
 ::  Kokoro TTS  -  Standalone application builder
 ::
-::  Usage:   scripts\build.bat            build (GPU build of PyTorch if an
-::                                         NVIDIA GPU is found, else CPU)
-::           scripts\build.bat --cpu      force the smaller CPU-only build
+::  Usage:   scripts\build.bat                    build the app
+::           scripts\build.bat --refresh-gpu-list re-resolve the GPU pack list
+::
+::  Builds the small base app with the CPU engine (ONNX Runtime, no PyTorch).
+::  The voice model (~330 MB) and the optional GPU pack (PyTorch + CUDA) are
+::  downloaded by the app itself, so neither is bundled.
 ::
 ::  Creates the venv and installs everything it needs, so a fresh clone
 ::  only needs Python 3.9 - 3.12 with the "py" launcher.
@@ -31,8 +34,9 @@ set "NAME=KokoroTTS"
 set "PY_MIN=9"
 set "PY_MAX=12"
 
-set "FORCE_CPU=0"
-if /i "%~1"=="--cpu" set "FORCE_CPU=1"
+set "REFRESH_GPU=0"
+if /i "%~1"=="--refresh-gpu-list" set "REFRESH_GPU=1"
+set "MANIFEST=%ROOT%\core\gpu_manifest.json"
 
 echo.
 echo  ==========================================================
@@ -80,38 +84,8 @@ for /f "tokens=*" %%v in ('"%PY%" --version 2^>^&1') do echo   %%v  ^(%VENV%^)
 "%PY%" -m pip install --quiet --upgrade pip >nul 2>&1
 echo.
 
-:: --- [2/6] PyTorch ------------------------------------------------------------
-echo [2/6] Checking PyTorch...
-"%PY%" -c "import torch" >nul 2>&1
-if errorlevel 1 (
-    set "TORCH_INDEX=https://download.pytorch.org/whl/cpu"
-    set "TORCH_KIND=CPU"
-    if "%FORCE_CPU%"=="0" (
-        nvidia-smi >nul 2>&1
-        if not errorlevel 1 (
-            set "TORCH_INDEX=https://download.pytorch.org/whl/cu121"
-            set "TORCH_KIND=CUDA"
-        )
-    )
-    echo   Installing the !TORCH_KIND! build of PyTorch ^(large download^)...
-    "%PY%" -m pip install torch torchaudio --index-url !TORCH_INDEX!
-    if errorlevel 1 ( echo [ERROR] PyTorch installation failed. & goto :fail )
-) else (
-    if "%FORCE_CPU%"=="1" (
-        "%PY%" -c "import torch, sys; sys.exit(1 if torch.version.cuda else 0)" >nul 2>&1
-        if errorlevel 1 (
-            echo   --cpu given: replacing the CUDA build with the CPU build...
-            "%PY%" -m pip uninstall -y torch torchaudio >nul
-            "%PY%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-            if errorlevel 1 ( echo [ERROR] PyTorch installation failed. & goto :fail )
-        )
-    )
-)
-"%PY%" -c "import torch; print('  torch', torch.__version__, '| CUDA build:', bool(torch.version.cuda), '| GPU available:', torch.cuda.is_available())"
-echo.
-
-:: --- [3/6] App dependencies and PyInstaller ------------------------------
-echo [3/6] Installing app dependencies and PyInstaller...
+:: --- [2/6] App dependencies and PyInstaller ------------------------------
+echo [2/6] Installing app dependencies and PyInstaller...
 "%PY%" -m pip install --quiet -r "%REQ%" pyinstaller
 if errorlevel 1 ( echo [ERROR] Dependency installation failed. & goto :fail )
 :: English text processing needs this spaCy model inside the bundle
@@ -124,13 +98,37 @@ if errorlevel 1 (
 echo   Done.
 echo.
 
+:: --- [3/6] GPU pack list ------------------------------------------------------
+:: core\gpu_manifest.json pins every wheel of the optional GPU pack for this
+:: Python version. Regenerate it when missing, for another Python, or on request.
+echo [3/6] Checking the GPU pack list...
+if exist "%VENV%\Lib\site-packages\torch" (
+    echo [ERROR] PyTorch is installed in venv\. The base app must be built without it.
+    echo         Delete the venv folder and run this script again.
+    goto :fail
+)
+set "NEED_LIST=%REFRESH_GPU%"
+if not exist "%MANIFEST%" set "NEED_LIST=1"
+if "%NEED_LIST%"=="0" (
+    "%PY%" -c "import json,sys; m=json.load(open(r'%MANIFEST%')); sys.exit(0 if m['python']=='cp%%d%%d' %% sys.version_info[:2] else 1)" >nul 2>&1
+    if errorlevel 1 set "NEED_LIST=1"
+)
+if "%NEED_LIST%"=="1" (
+    echo   Resolving PyTorch + CUDA wheels for this Python...
+    "%PY%" "%ROOT%\scripts\make_gpu_manifest.py"
+    if errorlevel 1 ( echo [ERROR] Could not create the GPU pack list. & goto :fail )
+) else (
+    echo   Up to date.
+)
+echo.
+
 :: --- [4/6] Clean previous build ------------------------------------------
-:: The app keeps audio_output\, logs\ and user_data\ next to the exe; move them
-:: aside so a rebuild never deletes the user's audio or settings.
+:: The app keeps audio_output\, logs\, user_data\, models\ and engines\ next to
+:: the exe; move them aside so a rebuild never deletes audio, settings or downloads.
 echo [4/6] Cleaning previous build...
 if exist "%BUILD_TMP%" rmdir /s /q "%BUILD_TMP%"
 if exist "%KEEP_TMP%" call :restore_user_folders
-for %%d in (audio_output logs user_data) do (
+for %%d in (audio_output logs user_data models engines) do (
     if exist "%BIN%\%NAME%\%%d" (
         if not exist "%KEEP_TMP%" mkdir "%KEEP_TMP%"
         move "%BIN%\%NAME%\%%d" "%KEEP_TMP%\%%d" >nul
@@ -146,6 +144,16 @@ echo.
 :: --- [5/6] PyInstaller --------------------------------------------------------
 echo [5/6] Running PyInstaller (this takes several minutes)...
 echo.
+:: Packages the base app shares with the GPU pack must be bundled whole: the
+:: bundled copy wins over the pack's, and torch/kokoro use parts the base app
+:: does not (found by running the GPU engine: tqdm, jinja2, loguru, numpy...).
+:: transformers also checks their versions through package metadata.
+:: Rust/abi3 extensions in the GPU pack (safetensors, tokenizers) link against
+:: python3.dll, which PyInstaller does not bundle by itself.
+"%PY%" -c "import sys, os; print(os.path.join(sys.base_prefix, 'python3.dll'))" > "%ROOT%\release\py3dll.txt"
+set /p PY3DLL=<"%ROOT%\release\py3dll.txt"
+del "%ROOT%\release\py3dll.txt" >nul 2>&1
+if not exist "%PY3DLL%" ( echo [ERROR] python3.dll not found next to the base Python. & goto :fail )
 "%PY%" -m PyInstaller ^
     --noconfirm ^
     --name "%NAME%" ^
@@ -155,7 +163,9 @@ echo.
     --workpath "%BUILD_TMP%" ^
     --specpath "%BUILD_TMP%" ^
     --paths "%ROOT%" ^
-    --collect-all kokoro ^
+    --additional-hooks-dir "%ROOT%\scripts\pyinstaller_hooks" ^
+    --add-data "%MANIFEST%;core" ^
+    --collect-all onnxruntime ^
     --collect-all misaki ^
     --collect-all espeakng_loader ^
     --collect-all phonemizer ^
@@ -173,14 +183,40 @@ echo.
     --collect-data thinc ^
     --collect-all docx ^
     --collect-all pypdf ^
-    --collect-all transformers ^
-    --collect-all tokenizers ^
-    --collect-all huggingface_hub ^
-    --collect-all torch ^
+    --add-binary "%PY3DLL%;." ^
+    --copy-metadata tqdm ^
+    --copy-metadata numpy ^
+    --copy-metadata regex ^
+    --copy-metadata packaging ^
+    --copy-metadata requests ^
+    --copy-metadata jinja2 ^
+    --copy-metadata markupsafe ^
+    --copy-metadata typing_extensions ^
+    --copy-metadata urllib3 ^
+    --copy-metadata idna ^
+    --copy-metadata certifi ^
+    --copy-metadata charset_normalizer ^
+    --copy-metadata loguru ^
+    --collect-submodules tqdm ^
+    --collect-submodules jinja2 ^
+    --collect-submodules markupsafe ^
+    --collect-submodules numpy ^
+    --collect-submodules loguru ^
+    --collect-submodules win32_setctime ^
+    --collect-submodules requests ^
+    --collect-submodules packaging ^
+    --collect-submodules typing_extensions ^
+    --collect-submodules urllib3 ^
+    --collect-submodules regex ^
     --hidden-import=loguru ^
     --hidden-import=misaki.en ^
     --hidden-import=misaki.espeak ^
     --hidden-import=tkinter.ttk ^
+    --exclude-module=torch ^
+    --exclude-module=torchaudio ^
+    --exclude-module=kokoro ^
+    --exclude-module=transformers ^
+    --exclude-module=onnx ^
     --exclude-module=matplotlib ^
     --exclude-module=IPython ^
     --exclude-module=pytest ^
@@ -198,7 +234,8 @@ echo.
 echo [6/6] Verifying the build...
 if not exist "%BIN%\%NAME%\%NAME%.exe" ( echo [ERROR] %NAME%.exe was not created. & goto :fail )
 if exist "%BUILD_TMP%" rmdir /s /q "%BUILD_TMP%"
-for /f %%s in ('powershell -NoProfile -Command "[math]::Round((Get-ChildItem -LiteralPath '%BIN%\%NAME%' -Recurse -File | Measure-Object Length -Sum).Sum / 1GB, 2)"') do set "SIZE_GB=%%s"
+:: App size only (exe + _internal), not the user's downloads kept next to it
+for /f %%s in ('powershell -NoProfile -Command "[math]::Round(((Get-ChildItem -LiteralPath '%BIN%\%NAME%\_internal' -Recurse -File | Measure-Object Length -Sum).Sum + (Get-Item -LiteralPath '%BIN%\%NAME%\%NAME%.exe').Length) / 1MB)"') do set "SIZE_MB=%%s"
 
 echo.
 echo  ==========================================================
@@ -206,14 +243,14 @@ echo     BUILD SUCCESSFUL
 echo  ==========================================================
 echo.
 echo   Executable : %BIN%\%NAME%\%NAME%.exe
-echo   Folder size: !SIZE_GB! GB
+echo   App size   : !SIZE_MB! MB  (downloads kept next to it are not counted)
 echo.
 echo   Distribution notes:
 echo    - Share the whole release\bin\%NAME%\ folder; the exe needs it.
 echo    - No Python installation is needed on the target PC.
 echo    - audio_output\, logs\ and user_data\ are created next to the exe.
-echo    - The first generation downloads the voice model (about 330 MB)
-echo      into %%USERPROFILE%%\.cache\huggingface.
+echo    - First launch downloads the voice model (about 345 MB) into models\.
+echo    - NVIDIA users can add the GPU pack from Voice settings - Engine.
 echo    - Problems? Check logs\kokoro_tts.log next to the exe.
 echo.
 if not defined NO_PAUSE pause
@@ -222,11 +259,11 @@ exit /b 0
 :restore_user_folders
 if not exist "%KEEP_TMP%" exit /b 0
 if not exist "%BIN%\%NAME%" mkdir "%BIN%\%NAME%"
-for %%d in (audio_output logs user_data) do (
+for %%d in (audio_output logs user_data models engines) do (
     if exist "%KEEP_TMP%\%%d" if not exist "%BIN%\%NAME%\%%d" move "%KEEP_TMP%\%%d" "%BIN%\%NAME%\%%d" >nul
 )
 rmdir "%KEEP_TMP%" 2>nul
-echo   Restored audio_output\, logs\ and user_data\ next to the exe.
+echo   Restored the app data folders next to the exe.
 exit /b 0
 
 :fail
