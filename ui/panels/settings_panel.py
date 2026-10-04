@@ -1,31 +1,15 @@
-import re
+import os
+from datetime import datetime
 import customtkinter as ctk
 from ui.theme import C, FONT_SUBLABEL, FONT_TINY, FONT_SMALL, FONT_NORMAL
 from ui.components.icons import icon
 from ui.components.play_button import PlayPauseButton
 from core.voices import VOICES, DEFAULT_LANGUAGE, default_voice
 from core import settings as app_settings
+from core import paths
 
 SPEED_DEFAULT, PITCH_DEFAULT, BLEND_DEFAULT = 1.0, 0.0, 0.5
 _NO_MIX = "None"
-
-_INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_RESERVED = {"CON", "PRN", "AUX", "NUL",
-             *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
-
-
-def sanitize_filename(name: str) -> str:
-    """Strip characters Windows forbids in file names; neutralise reserved names.
-
-    Removing slashes and colons also stops names from pointing outside the
-    app folder (e.g. "../x" or "C:x").
-    """
-    name = _INVALID_CHARS.sub("", name).strip().rstrip(". ")
-    name = name.lstrip(".")
-    if name.upper().split(".")[0] in _RESERVED:
-        name = f"_{name}"
-    return name[:120]
-
 
 class SettingsPanel(ctk.CTkFrame):
     """Right panel: language, voice, voice mix, speed, pitch, output filename."""
@@ -41,7 +25,6 @@ class SettingsPanel(ctk.CTkFrame):
         self._on_voice_preview = on_voice_preview
         self._on_change = on_change
         self._voice_map: dict = {}    # label -> voice_id for the current language
-        self._hint_after = None
         self._build()
 
     # ── layout helpers ────────────────────────────────────────────────────────
@@ -158,18 +141,27 @@ class SettingsPanel(ctk.CTkFrame):
         ctk.CTkFrame(body, fg_color=C["border"], height=1,
                      corner_radius=0).grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
 
-        # Output filename
-        self._section(body, r, "output", "OUTPUT FILE"); r += 1
-        self._output_entry = ctk.CTkEntry(
-            body, placeholder_text="audio_output",
-            fg_color=C["surface2"], border_color=C["border"],
-            text_color=C["text"], corner_radius=8, height=32, font=FONT_NORMAL,
-        )
-        self._output_entry.grid(row=r, column=0, sticky="ew", pady=(0, 4)); r += 1
-        self._output_entry.bind("<KeyRelease>", self._on_output_edited)
-        self._output_hint = ctk.CTkLabel(body, text=".wav will be appended automatically",
-                                         font=FONT_TINY, text_color=C["text3"], anchor="w")
-        self._output_hint.grid(row=r, column=0, sticky="w"); r += 1
+        # Output: fixed folder, files named by date and time
+        self._section(body, r, "output", "OUTPUT"); r += 1
+        card = ctk.CTkFrame(body, fg_color=C["surface2"], corner_radius=8,
+                            border_color=C["border"], border_width=1)
+        card.grid(row=r, column=0, sticky="ew", pady=(0, 4)); r += 1
+        card.grid_columnconfigure(0, weight=1)
+        folder = os.path.basename(paths.AUDIO_DIR) + os.sep
+        ctk.CTkLabel(card, text=folder, font=FONT_NORMAL, text_color=C["text"],
+                     anchor="w").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
+        example = datetime.now().strftime(paths.OUTPUT_NAME_FORMAT)
+        ctk.CTkLabel(card, text=f"Named by date and time, e.g. {example}.wav",
+                     font=FONT_TINY, text_color=C["text3"], anchor="w",
+                     ).grid(row=1, column=0, sticky="w", padx=10)
+        self._last_file = ctk.CTkLabel(card, text="", font=FONT_TINY,
+                                       text_color=C["accent_h"], anchor="w")
+        self._last_file.grid(row=2, column=0, sticky="w", padx=10)
+        self._last_file.grid_remove()
+        ctk.CTkButton(card, text="Open folder", font=FONT_SMALL, height=28,
+                      fg_color=C["surface3"], hover_color=C["border2"], text_color=C["text"],
+                      corner_radius=6, command=lambda: paths.open_folder(paths.AUDIO_DIR),
+                      ).grid(row=3, column=0, sticky="ew", padx=10, pady=(6, 10))
 
         # Reset (pinned to the bottom of the panel)
         self._reset_btn = ctk.CTkButton(
@@ -206,15 +198,6 @@ class SettingsPanel(ctk.CTkFrame):
     def _notify(self):
         if self._on_change:
             self._on_change()
-
-    def _show_hint(self, text, colour, revert_ms=None):
-        if self._hint_after:
-            self.after_cancel(self._hint_after)
-            self._hint_after = None
-        self._output_hint.configure(text=text, text_color=colour)
-        if revert_ms:
-            self._hint_after = self.after(revert_ms, lambda: self._show_hint(
-                ".wav will be appended automatically", C["text3"]))
 
     def _rebuild_mix_menu(self):
         """Mix candidates are the language's voices except the selected one."""
@@ -276,18 +259,6 @@ class SettingsPanel(ctk.CTkFrame):
         if notify:
             self._notify()
 
-    def _on_output_edited(self, _event=None):
-        raw = self._output_entry.get()
-        clean = sanitize_filename(raw)
-        if clean != raw.strip() and raw.strip():
-            pos = self._output_entry.index("insert")
-            self._output_entry.delete(0, "end")
-            self._output_entry.insert(0, clean)
-            self._output_entry.icursor(min(pos, len(clean)))
-            self._show_hint('Removed characters not allowed in file names', C["status_busy"],
-                            revert_ms=2500)
-        self._notify()
-
     # ── public API ────────────────────────────────────────────────────────────
 
     def update_voice_list(self, lang_key: str, voices: list, selected: str = None):
@@ -305,8 +276,10 @@ class SettingsPanel(ctk.CTkFrame):
         self._preview_btn.set_busy(state == "busy")
         self._preview_btn.set_playing(state == "playing")
 
-    def update_output_info(self, filename: str, meta: str):
-        """No-op — Last Output card removed; kept for API compatibility."""
+    def update_output_info(self, filename: str, meta: str = ""):
+        """Show the most recently generated file in the output card."""
+        self._last_file.configure(text=f"Last: {filename}" + (f"  ·  {meta}" if meta else ""))
+        self._last_file.grid()
 
     def get_language_key(self) -> str:
         return self.lang_var.get()
@@ -330,10 +303,6 @@ class SettingsPanel(ctk.CTkFrame):
     def get_pitch(self) -> float:
         return round(self.pitch_var.get() * 2) / 2
 
-    def get_output_filename(self) -> str:
-        """Return the sanitized output filename (without extension)."""
-        return sanitize_filename(self._output_entry.get()) or "audio_output"
-
     def get_state(self) -> dict:
         blend_voice, ratio = self.get_blend()
         return {
@@ -343,7 +312,6 @@ class SettingsPanel(ctk.CTkFrame):
             "blend_ratio": ratio if blend_voice else round(self.blend_var.get(), 2),
             "speed": self.get_speed(),
             "pitch": self.get_pitch(),
-            "output_name": self.get_output_filename(),
         }
 
     def apply_state(self, state: dict):
@@ -369,10 +337,6 @@ class SettingsPanel(ctk.CTkFrame):
         self._on_speed_change(self.speed_var.get(), notify=False)
         self._on_pitch_change(self.pitch_var.get(), notify=False)
         self._update_mix_visibility()
-
-        self._output_entry.delete(0, "end")
-        self._output_entry.insert(0, sanitize_filename(str(state.get("output_name") or ""))
-                                  or "audio_output")
 
     def reset_to_defaults(self):
         self.apply_state(app_settings.DEFAULTS)

@@ -12,13 +12,27 @@ build/
 build_tmp/
 *.spec
 
-# Output files
-output.wav
+# App output and runtime data (created on first run)
+audio_output/
+logs/
+user_data/
 *.wav
 *.mp3
-
-# Logs
 *.log
+
+# Legacy locations used by older versions (migrated to the folders above)
+settings.json
+settings.json.tmp
+draft.txt
+draft.txt.tmp
+pronunciations.json
+pronunciations.json.tmp
+
+# PyInstaller build output (see scripts/build.bat)
+release/
+
+# Hugging Face model cache (large, downloaded at runtime)
+.cache/
 
 # OS
 .DS_Store
@@ -29,15 +43,3 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
-
-# Hugging Face model cache (large, downloaded at runtime)
-.cache/
-
-release/
-# User settings (saved by the app)
-settings.json
-settings.json.tmp
-draft.txt
-draft.txt.tmp
-pronunciations.json
-pronunciations.json.tmp

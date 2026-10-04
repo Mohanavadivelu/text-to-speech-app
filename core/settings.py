@@ -1,12 +1,13 @@
-"""Persist voice settings between launches in settings.json (git-ignored)."""
+"""Persist settings between launches in user_data/settings.json (git-ignored)."""
 import json
 import logging
 import os
 
+from core import paths
+
 log = logging.getLogger(__name__)
 
-_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-SETTINGS_PATH = os.path.join(_ROOT, "settings.json")
+SETTINGS_PATH = paths.SETTINGS_PATH
 
 DEFAULTS = {
     "language": "American English",
@@ -15,7 +16,6 @@ DEFAULTS = {
     "blend_ratio": 0.5,
     "speed": 1.0,
     "pitch": 0.0,
-    "output_name": "audio_output",
     "text_font_size": 11,
 }
 
@@ -38,6 +38,7 @@ def load() -> dict:
 def save(data: dict):
     """Write settings atomically. Never raises."""
     try:
+        os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
         tmp = SETTINGS_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({k: data.get(k, v) for k, v in DEFAULTS.items()}, f, indent=2)

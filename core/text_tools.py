@@ -5,11 +5,12 @@ import os
 import re
 import unicodedata
 
+from core import paths
+
 log = logging.getLogger(__name__)
 
-_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-PRONUNCIATIONS_PATH = os.path.join(_ROOT, "pronunciations.json")
-DRAFT_PATH = os.path.join(_ROOT, "draft.txt")
+PRONUNCIATIONS_PATH = paths.PRONUNCIATIONS_PATH
+DRAFT_PATH = paths.DRAFT_PATH
 
 OPEN_FILETYPES = [
     ("Text documents", "*.txt *.md *.docx *.pdf"),
@@ -176,6 +177,7 @@ def save_draft(text: str):
             if os.path.exists(DRAFT_PATH):
                 os.remove(DRAFT_PATH)
             return
+        os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
         tmp = DRAFT_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(text)
@@ -202,6 +204,7 @@ def load_pronunciations() -> list[dict]:
 
 def save_pronunciations(entries: list[dict]):
     try:
+        os.makedirs(os.path.dirname(PRONUNCIATIONS_PATH), exist_ok=True)
         tmp = PRONUNCIATIONS_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(entries, f, indent=2, ensure_ascii=False)

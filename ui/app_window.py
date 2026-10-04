@@ -16,16 +16,14 @@ from ui.components.toast import Toast
 from ui.components.pronunciation_dialog import PronunciationDialog
 
 from core.engine import TTSEngine, GenerationCancelled, SAMPLE_RATE, DEVICE, log_device_info
-from core import text_tools
+from core import text_tools, paths
+from core.logging_setup import log_tk_exception
 from core.player import AudioPlayer
 from core.voices import VOICES, LANG_CODES, PREVIEW_TEXT
 from core import settings as app_settings
 
 log = logging.getLogger(__name__)
 
-# Output file is always written next to app.py (project root)
-_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-_DEFAULT_OUTPUT = os.path.join(_ROOT, "output.wav")
 
 # Ask before generating when it is expected to take longer than this
 _LONG_GENERATION_WARN_SECS = 60
@@ -42,6 +40,7 @@ except ImportError:
 class KokoroApp(ctk.CTk, *_DND_BASES):
     def __init__(self):
         super().__init__()
+        self.report_callback_exception = log_tk_exception
         self._dnd_ready = False
         if TkinterDnD is not None:
             try:
@@ -320,17 +319,15 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         blend       = self._settings_panel.get_blend()
         speed       = self._settings_panel.get_speed()
         pitch       = self._settings_panel.get_pitch()
-        out_name    = self._settings_panel.get_output_filename()
-        output_path = os.path.join(_ROOT, f"{out_name}.wav")
 
         threading.Thread(
             target=self._generate_worker,
-            args=(text, lang_code, voice_id, speed, pitch, output_path, blend,
+            args=(text, lang_code, voice_id, speed, pitch, blend,
                   self._cancel_event),
             daemon=True,
         ).start()
 
-    def _generate_worker(self, text, lang_code, voice_id, speed, pitch, output_path,
+    def _generate_worker(self, text, lang_code, voice_id, speed, pitch,
                          blend=(None, 0.0), cancel_event=None):
         try:
             first_chunk_played = threading.Event()
@@ -354,6 +351,8 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
                 on_chunk=on_chunk, blend_voice=blend[0], blend_ratio=blend[1],
                 cancel_event=cancel_event,
             )
+            # audio_output/ddmmyyyy_HHMMSS.wav, stamped when the audio is finished
+            output_path = paths.new_output_path()
             self._engine.save(audio, sr, output_path)
             self.after(0, lambda: self._on_generate_done(audio, sr, output_path, voice_id))
         except GenerationCancelled:
@@ -410,9 +409,7 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
 
         duration = len(audio) / sr
         filename = os.path.basename(path)
-        mins = int(duration // 60)
-        secs = duration % 60
-        meta = f"24 kHz · WAV · {mins}:{secs:04.1f}s"
+        meta = text_tools.format_duration(duration)
 
         self._text_panel.set_generating(False)
         self._player_bar.set_generating(False)
@@ -420,7 +417,7 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
         self._player_bar.set_audio_data(audio, sr)   # render waveform
 
         self._settings_panel.update_output_info(filename, meta)
-        self._statusbar.set_status(f"Done — saved to {filename}", "ok")
+        self._statusbar.set_status(f"Done — saved to {os.path.basename(paths.AUDIO_DIR)}{os.sep}{filename}", "ok")
 
         Toast(self, f"Saved to {filename}", kind="info")
 
@@ -540,6 +537,7 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
             defaultextension=".wav",
             filetypes=[("WAV audio", "*.wav"), ("All files", "*.*")],
             initialfile=suggested,
+            initialdir=paths.AUDIO_DIR,
             title="Save Audio As",
             parent=self,
         )
@@ -560,11 +558,5 @@ class KokoroApp(ctk.CTk, *_DND_BASES):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    log_device_info()   # now logging is configured — GPU info will appear in console/log
-    app = KokoroApp()
-    app.mainloop()
+    import app
+    app.main()

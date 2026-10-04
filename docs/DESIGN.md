@@ -1,5 +1,7 @@
 # Kokoro TTS — UI Design Specification
 
+> **Note:** this is the original design spec from April 2026. The app has since gained voice mixing, a themed text editor toolbar, find/replace, pronunciations, a round play button, timestamped output and more. See the [README](../README.md) for the current features and project structure.
+
 > **Theme:** Studio Dark (VS Code–inspired)  
 > **UI Framework:** CustomTkinter (`customtkinter`)  
 > **Layout:** Fullscreen / maximised to current OS window size on launch. Min size 820 × 580 px. All panels resize dynamically with the window.  
