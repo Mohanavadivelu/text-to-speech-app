@@ -460,8 +460,7 @@ text-to-speech-app/
 │       └── statusbar.py            ← StatusBar
 │
 ├── DESIGN.md                       ← This file
-├── start.bat
-├── build.bat
+├── scripts/build.bat
 ├── requirements.txt
 └── README.md
 ```

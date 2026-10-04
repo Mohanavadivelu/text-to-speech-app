@@ -24,15 +24,31 @@ A Windows desktop app that turns text into natural-sounding speech, running full
 
 ## Getting started
 
-Double-click **`start.bat`**. On first run it:
+### Build the app (recommended)
 
-1. Creates a virtual environment in `venv\` with a compatible Python.
-2. Installs PyTorch (the CUDA build if an NVIDIA GPU is found) and everything in `requirements.txt`.
-3. Starts the app.
+From the project folder, run:
 
-Later runs skip straight to step 3. The voice model downloads the first time you generate speech.
+```bat
+scripts\build.bat
+```
 
-### Manual setup
+The script does everything on a fresh clone:
+
+1. Finds Python 3.9 – 3.12 and creates a virtual environment in `venv\`.
+2. Installs PyTorch (the CUDA build if an NVIDIA GPU is found), everything in `requirements.txt` and PyInstaller.
+3. Builds the standalone app into `release\bin\KokoroTTS\`.
+
+Then start **`release\bin\KokoroTTS\KokoroTTS.exe`**. The voice model downloads the first time you generate speech. See [Building a standalone EXE](#building-a-standalone-exe) for options.
+
+### Run from source (for development)
+
+After `scripts\build.bat` has created the virtual environment once:
+
+```bat
+venv\Scripts\python app.py
+```
+
+Or set it up by hand:
 
 ```bat
 py -3.12 -m venv venv
@@ -85,7 +101,6 @@ Open **Pronunciations** above the editor and add a word with how it should sound
 ```
 text-to-speech-app/
 ├── app.py                 Entry point: sets up folders and logging, starts the UI
-├── start.bat              One-click setup and launch
 ├── requirements.txt
 ├── core/                  No UI code in here
 │   ├── engine.py          Kokoro model, text splitting, voice blending, cancel
@@ -101,7 +116,7 @@ text-to-speech-app/
 │   ├── panels/            Title bar, text editor, voice settings, player, status bar
 │   └── components/        Reusable widgets (buttons, menu, find bar, dialogs…)
 ├── docs/                  Original design spec and HTML mock-up
-├── scripts/build.bat      Builds a standalone KokoroTTS.exe
+├── scripts/build.bat      Sets up venv\ and builds the standalone KokoroTTS.exe
 │
 │   Created when the app runs (not in git):
 ├── audio_output/          Generated speech
@@ -119,12 +134,17 @@ Older versions kept settings, logs and audio in the project root. They are moved
 scripts\build.bat
 ```
 
-This creates `release\bin\KokoroTTS\KokoroTTS.exe` with PyInstaller. Share the whole `KokoroTTS` folder (about 2–3 GB with CUDA); the exe does not run on its own. No Python is needed on the target PC. The app creates `audio_output\`, `logs\` and `user_data\` next to the exe.
+This creates `release\bin\KokoroTTS\KokoroTTS.exe` with PyInstaller, creating `venv\` and installing dependencies first if needed.
+
+- `scripts\build.bat --cpu` builds with the CPU-only PyTorch. It is much smaller but generates more slowly.
+- Set `NO_PAUSE=1` to skip the final "press any key", for scripted builds.
+
+Share the whole `KokoroTTS` folder; the exe does not run on its own. With CUDA the folder is several GB, mostly PyTorch. No Python is needed on the target PC. The app creates `audio_output\`, `logs\` and `user_data\` next to the exe.
 
 ## Troubleshooting
 
 - **Something went wrong**: check `logs\kokoro_tts.log`. Errors, including crashes, are recorded there with details.
-- **Running on CPU although you have an NVIDIA GPU**: the CPU build of PyTorch is installed. Delete `venv\` and run `start.bat` again, or reinstall PyTorch with the CUDA command above.
+- **Running on CPU although you have an NVIDIA GPU**: the CPU build of PyTorch is installed. Delete `venv\` and run `scripts\build.bat` again, or reinstall PyTorch with the CUDA command above.
 - **The first generation is slow**: the model (about 330 MB) and voices are downloading. Later runs work offline.
 - **"Unauthenticated requests to the HF Hub" warning**: harmless. Setting an `HF_TOKEN` environment variable only speeds up downloads.
 - **A word is pronounced wrongly**: add it under **Pronunciations**.

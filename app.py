@@ -9,6 +9,13 @@ import sys
 if getattr(sys, "frozen", False):
     sys.path.insert(0, sys._MEIPASS)  # PyInstaller bundle dir
 
+# A windowed (--noconsole) build has no stdout/stderr; libraries that print or
+# draw progress bars (e.g. model downloads) would crash writing to None.
+import os
+for _name in ("stdout", "stderr"):
+    if getattr(sys, _name) is None:
+        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
+
 from core import paths
 from core.logging_setup import setup_logging
 
