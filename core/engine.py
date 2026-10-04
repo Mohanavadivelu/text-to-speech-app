@@ -1,6 +1,7 @@
 import logging
 import re
 import threading
+import time
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -169,8 +170,17 @@ def _break_lines(text: str, max_chars: int = _ESPEAK_LINE_CHARS) -> str:
     return "\n".join(lines)
 
 
+class GenerationCancelled(Exception):
+    """Raised inside generate() when its cancel_event is set."""
+
+
+# Audio seconds produced per wall-clock second, used before we have a measurement
+_DEFAULT_REALTIME_FACTOR = 20.0 if DEVICE == "cuda" else 2.0
+
+
 class TTSEngine:
     def __init__(self):
+        self.realtime_factor = None   # measured audio-seconds per second of work
         self._model = None
         self._model_lock = threading.Lock()
         self._pipelines: dict = {}       # lang_code -> KPipeline (shares self._model)
@@ -245,7 +255,7 @@ class TTSEngine:
 
     @staticmethod
     def _run_pipeline(pipeline, text: str, voice, speed: float,
-                      pitch: float = 0.0) -> np.ndarray:
+                      pitch: float = 0.0, cancel_event=None) -> np.ndarray:
         """Run pipeline with inference_mode for maximum speed (no gradient tracking).
 
         *pitch* is in semitones. Speech is generated slower or faster by the
@@ -255,6 +265,8 @@ class TTSEngine:
         chunks = []
         with torch.inference_mode():
             for _gs, _ps, audio in pipeline(text, voice=voice, speed=speed / factor):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise GenerationCancelled()
                 if hasattr(audio, "numpy"):
                     audio = audio.detach().cpu().numpy()
                 chunks.append(np.asarray(audio, dtype=np.float32))
@@ -267,7 +279,8 @@ class TTSEngine:
 
     def generate(self, text: str, lang_code: str, voice_id: str, speed: float,
                  pitch: float = 0.0, on_status=None, on_progress=None,
-                 on_chunk=None, blend_voice=None, blend_ratio: float = 0.5):
+                 on_chunk=None, blend_voice=None, blend_ratio: float = 0.5,
+                 cancel_event=None):
         """Generate audio for *text*.
 
         Returns (np.ndarray[float32], sample_rate).
@@ -278,7 +291,30 @@ class TTSEngine:
           on_chunk(audio: np.ndarray)  — called with each completed segment
 
         blend_voice / blend_ratio mix a second voice into *voice_id*.
+        Setting *cancel_event* stops work and raises GenerationCancelled.
         """
+        try:
+            return self._generate(text, lang_code, voice_id, speed, pitch, on_status,
+                                  on_progress, on_chunk, blend_voice, blend_ratio,
+                                  cancel_event)
+        except GenerationCancelled:
+            log.info("Generation cancelled")
+            if DEVICE == "cuda":
+                torch.cuda.empty_cache()
+            raise
+
+    def estimate_generation_seconds(self, audio_seconds: float) -> float:
+        return audio_seconds / (self.realtime_factor or _DEFAULT_REALTIME_FACTOR)
+
+    def _generate(self, text, lang_code, voice_id, speed, pitch, on_status, on_progress,
+                  on_chunk, blend_voice, blend_ratio, cancel_event):
+        started = time.perf_counter()
+
+        def _check():
+            if cancel_event is not None and cancel_event.is_set():
+                raise GenerationCancelled()
+
+        _check()
         with self._lock:
             pipeline = self._get_pipeline(lang_code, on_status=on_status)
             voice = self._resolve_voice(pipeline, voice_id, blend_voice, blend_ratio)
@@ -299,8 +335,10 @@ class TTSEngine:
         if total_segs == 1 or _MAX_WORKERS <= 1:
             # ── Single-threaded path (GPU or single-core CPU) ─────────────────
             for i, seg in enumerate(segments):
+                _check()
                 with self._lock:
-                    audio = self._run_pipeline(pipeline, seg, voice, speed, pitch)
+                    audio = self._run_pipeline(pipeline, seg, voice, speed, pitch,
+                                               cancel_event)
                 all_chunks[i] = audio
                 if on_chunk:
                     on_chunk(audio)
@@ -323,20 +361,28 @@ class TTSEngine:
 
             def _process(idx: int, seg: str):
                 nonlocal done_count
+                _check()
                 if idx % 2 == 0:
                     with self._lock:
-                        audio = self._run_pipeline(pipeline, seg, voice, speed, pitch)
+                        audio = self._run_pipeline(pipeline, seg, voice, speed, pitch,
+                                                   cancel_event)
                 else:
                     aux = self._get_aux_pipeline(lang_code)
                     with self._aux_lock:
-                        audio = self._run_pipeline(aux, seg, voice, speed, pitch)
+                        audio = self._run_pipeline(aux, seg, voice, speed, pitch,
+                                                   cancel_event)
                 return idx, audio
 
             with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
                 futures = {pool.submit(_process, i, seg): i
                            for i, seg in enumerate(segments)}
                 for fut in as_completed(futures):
-                    idx, audio = fut.result()
+                    try:
+                        idx, audio = fut.result()
+                    except GenerationCancelled:
+                        for other in futures:
+                            other.cancel()
+                        raise
                     all_chunks[idx] = audio
                     with result_lock:
                         done_count += 1
@@ -361,7 +407,13 @@ class TTSEngine:
         if on_progress:
             on_progress(100)
 
-        log.info("Generation complete: %.2fs of audio on %s", len(full_audio) / SAMPLE_RATE, DEVICE)
+        audio_secs = len(full_audio) / SAMPLE_RATE
+        elapsed = time.perf_counter() - started
+        if elapsed > 0.5 and audio_secs > 1.0:
+            rtf = audio_secs / elapsed
+            self.realtime_factor = rtf if self.realtime_factor is None else \
+                0.7 * self.realtime_factor + 0.3 * rtf
+        log.info("Generation complete: %.2fs of audio in %.2fs on %s", audio_secs, elapsed, DEVICE)
         return full_audio, SAMPLE_RATE
 
     def save(self, audio, sample_rate: int, path: str):

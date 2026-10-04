@@ -58,6 +58,11 @@ class AudioPlayer:
         self._position = 0.0
         self._start_sample = 0
 
+    def unload(self):
+        """Stop and forget the loaded audio."""
+        self.stop()
+        self._audio = None
+
     @property
     def has_audio(self) -> bool:
         return self._audio is not None and len(self._audio) > 0
