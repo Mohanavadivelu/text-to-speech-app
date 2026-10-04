@@ -37,3 +37,7 @@ release/
 # User settings (saved by the app)
 settings.json
 settings.json.tmp
+draft.txt
+draft.txt.tmp
+pronunciations.json
+pronunciations.json.tmp

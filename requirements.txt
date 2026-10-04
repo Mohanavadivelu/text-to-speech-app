@@ -3,3 +3,6 @@ soundfile
 sounddevice
 kokoro
 customtkinter>=5.2.0
+tkinterdnd2
+python-docx
+pypdf

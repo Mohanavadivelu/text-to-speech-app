@@ -16,6 +16,7 @@ DEFAULTS = {
     "speed": 1.0,
     "pitch": 0.0,
     "output_name": "audio_output",
+    "text_font_size": 11,
 }
 
 
