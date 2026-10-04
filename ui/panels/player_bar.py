@@ -1,13 +1,14 @@
 import customtkinter as ctk
 from ui.theme import C, FONT_SMALL, FONT_TINY, FONT_MONO, FONT_LABEL, FONT_NORMAL
 from ui.components.player_waveform import PlayerWaveformCanvas
+from ui.components.play_button import PlayPauseButton
 
 
 class PlayerBar(ctk.CTkFrame):
     """Compact audio player bar pinned to the bottom of the window."""
 
     def __init__(self, parent,
-                 on_play=None, on_pause=None, on_stop=None,
+                 on_play=None, on_pause=None,
                  on_save=None, on_seek=None, on_volume=None,
                  on_skip_back=None, on_skip_fwd=None,
                  **kwargs):
@@ -16,7 +17,6 @@ class PlayerBar(ctk.CTkFrame):
                          corner_radius=0, **kwargs)
         self._on_play      = on_play
         self._on_pause     = on_pause
-        self._on_stop      = on_stop
         self._on_save      = on_save
         self._on_seek      = on_seek
         self._on_volume    = on_volume
@@ -74,19 +74,10 @@ class PlayerBar(ctk.CTkFrame):
         ctrl_row = ctk.CTkFrame(self, fg_color=C["surface2"], corner_radius=0)
         ctrl_row.pack(fill="x", padx=10, pady=(2, 6))
 
-        btn_kw = dict(width=28, fg_color="transparent",
-                      hover_color=C["surface3"],
-                      text_color=C["text2"], font=FONT_LABEL)
-
-        # Play/Pause
-        self._play_btn = ctk.CTkButton(ctrl_row, text="▶",
-                                       command=self.toggle_play, **btn_kw)
-        self._play_btn.pack(side="left", padx=(0, 2))
-
-        # Stop
-        self._stop_btn = ctk.CTkButton(ctrl_row, text="⏹",
-                                       command=self._do_stop, **btn_kw)
-        self._stop_btn.pack(side="left", padx=(0, 12))
+        # Play/Pause — circular toggle (stop is still available via Esc)
+        self._play_btn = PlayPauseButton(ctrl_row, size=36, command=self.toggle_play,
+                                         bg_color=C["surface2"])
+        self._play_btn.pack(side="left", padx=(0, 12))
 
         # Time label (hh:mm:ss / hh:mm:ss)
         self._time_label = ctk.CTkLabel(ctrl_row, text="00:00:00 / 00:00:00",
@@ -153,7 +144,7 @@ class PlayerBar(ctk.CTkFrame):
         self._fmt_label.configure(text="WAV")
         self._set_controls_enabled(True)
         self._save_btn.configure(state="normal")
-        self._play_btn.configure(text="▶")
+        self._play_btn.set_playing(False)
         self._playing = False
 
     def set_audio_data(self, audio, sample_rate: int):
@@ -177,41 +168,34 @@ class PlayerBar(ctk.CTkFrame):
 
     def on_playback_done(self):
         self._playing = False
-        self._play_btn.configure(text="▶")
+        self._play_btn.set_playing(False)
         self._cur_time_big.configure(text="00:00")
         self._time_label.configure(
             text=f"00:00:00 / {self._fmt_hh_mm_ss(self._duration)}")
         self._waveform.set_progress(0.0)
 
+    def set_playing(self, playing: bool):
+        """Sync the button with playback started elsewhere (e.g. voice preview)."""
+        self._playing = playing
+        self._play_btn.set_playing(playing)
+
     def toggle_play(self):
         """Public method — called by Space shortcut and play button."""
         if self._playing:
             self._playing = False
-            self._play_btn.configure(text="▶")
+            self._play_btn.set_playing(False)
             if self._on_pause:
                 self._on_pause()
         else:
             self._playing = True
-            self._play_btn.configure(text="⏸")
+            self._play_btn.set_playing(True)
             if self._on_play:
                 self._on_play()
 
     # ── internal helpers ───────────────────────────────────────────────────────
 
     def _set_controls_enabled(self, enabled: bool):
-        state = "normal" if enabled else "disabled"
-        for w in (self._play_btn, self._stop_btn):
-            w.configure(state=state)
-
-    def _do_stop(self):
-        self._playing = False
-        self._play_btn.configure(text="▶")
-        self._cur_time_big.configure(text="00:00")
-        self._time_label.configure(
-            text=f"00:00:00 / {self._fmt_hh_mm_ss(self._duration)}")
-        self._waveform.set_progress(0.0)
-        if self._on_stop:
-            self._on_stop()
+        self._play_btn.set_enabled(enabled)
 
     def _do_save(self):
         if self._on_save:

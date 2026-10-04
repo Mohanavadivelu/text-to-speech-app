@@ -64,7 +64,6 @@ class KokoroApp(ctk.CTk):
             self,
             on_play=self._on_play,
             on_pause=self._on_pause,
-            on_stop=self._on_stop,
             on_save=self._on_save,
             on_seek=self._on_seek,
             on_volume=self._on_volume,
@@ -107,10 +106,9 @@ class KokoroApp(ctk.CTk):
     def _update_voice_list(self, lang_key: str):
         voices = VOICES.get(lang_key, [])
         self._settings_panel.update_voice_list(lang_key, voices)
-        self._statusbar.set_voice(self._settings_panel.get_voice_id())
 
     def _on_voice_change(self, _label: str):
-        self._statusbar.set_voice(self._settings_panel.get_voice_id())
+        pass  # voice is read from the settings panel at generate time
 
     def _on_voice_preview(self):
         """Generate and play a short sample with the currently selected voice."""
@@ -146,8 +144,7 @@ class KokoroApp(ctk.CTk):
         duration = len(audio) / sr
         self._player_bar.set_audio_ready("preview", duration, sample_rate=sr)
         self._player_bar.set_audio_data(audio, sr)
-        self._player_bar._playing = True
-        self._player_bar._play_btn.configure(text="⏸")
+        self._player_bar.set_playing(True)
         self._statusbar.set_status("Playing preview…", "busy")
 
     # ── Generate ───────────────────────────────────────────────────────────────
@@ -234,7 +231,6 @@ class KokoroApp(ctk.CTk):
         self._player_bar.set_audio_data(audio, sr)   # render waveform
 
         self._settings_panel.update_output_info(filename, meta)
-        self._statusbar.set_voice(voice_id)
         self._statusbar.set_status(f"Done — saved to {filename}", "ok")
 
         Toast(self, f"Saved to {filename}", kind="info")

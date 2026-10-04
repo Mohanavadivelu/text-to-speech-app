@@ -17,6 +17,7 @@ C = {
     "btn_play_h":       "#22d68e",
     "btn_stop":         "#e05252",
     "btn_save":         "#3b8eea",
+    "btn_save_h":       "#5aa2f0",
     "text":             "#e8e8f0",
     "text2":            "#9898b8",
     "text3":            "#5a5a7a",
