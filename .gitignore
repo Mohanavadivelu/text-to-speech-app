@@ -1,49 +1,60 @@
-# Virtual environment
-venv/
-
-# Python
+# ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-*.pyo
 *.pyd
 *.egg-info/
-dist/
-build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments (scripts\build.bat creates venv\)
+/venv/
+/.venv/
+/env/
+
+# ── Build output (scripts\build.bat / PyInstaller) ───────────────────────────
+/release/
+/build/
+/dist/
 build_tmp/
 *.spec
 
-# App output and runtime data (created on first run)
-audio_output/
-logs/
-user_data/
+# ── Downloaded at runtime (can be several GB) ────────────────────────────────
+# Voice model files (onnx\, and pytorch\ with the GPU pack)
+/models/
+# Optional GPU pack: PyTorch + CUDA
+/engines/
+# Interrupted downloads, resumed on the next try
+*.part
+# Hugging Face cache, if a tool creates one here
+.cache/
+
+# ── App output and user data (created on first run) ─────────────────────────
+/audio_output/
+/logs/
+/user_data/
 *.wav
 *.mp3
 *.log
+*.tmp
 
-# Legacy locations used by older versions (migrated to the folders above)
-settings.json
-settings.json.tmp
-draft.txt
-draft.txt.tmp
-pronunciations.json
-pronunciations.json.tmp
+# Legacy root locations from older versions (migrated to the folders above)
+/settings.json
+/settings.json.tmp
+/draft.txt
+/draft.txt.tmp
+/pronunciations.json
+/pronunciations.json.tmp
 
-# PyInstaller build output (see scripts/build.bat)
-release/
+# ── Local experiments ───────────────────────────────────────────────────────
+/trial/
 
-# Hugging Face model cache (large, downloaded at runtime)
-.cache/
-
-# OS
+# ── OS and editors ──────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# IDE
 .vscode/
 .idea/
 *.swp
-
-# Downloaded at runtime
-models/
-engines/
