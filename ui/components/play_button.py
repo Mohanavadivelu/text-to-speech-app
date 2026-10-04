@@ -6,10 +6,12 @@ from ui.theme import C
 # Segoe MDL2 Assets with Windows 10. Plain Segoe UI cannot render "⏸", which
 # is why the old pause button showed an empty box.
 _ICON_SETS = (
-    ("Segoe Fluent Icons", "\uF5B0", "\uF8AE"),   # PlaySolid / PauseSolid
-    ("Segoe MDL2 Assets",  "\uF5B0", "\uE769"),   # PlaySolid / Pause
-    ("Segoe UI Symbol",    "\u25B6", "\u275A\u275A"),
+    ("Segoe Fluent Icons", "", ""),   # PlaySolid / PauseSolid
+    ("Segoe MDL2 Assets",  "", ""),   # PlaySolid / Pause
+    ("Segoe UI Symbol",    "▶", "❚❚"),
 )
+
+_BUSY_FRAMES = ("•", "• •", "• • •")
 
 
 def _pick_icons():
@@ -21,7 +23,7 @@ def _pick_icons():
 
 
 class PlayPauseButton(ctk.CTkFrame):
-    """Circular filled play/pause toggle.
+    """Circular filled play/pause toggle with an optional busy animation.
 
     Built from a round frame plus a centered label because CTkButton pads each
     side by its corner radius, so a fully rounded CTkButton is never circular.
@@ -37,6 +39,7 @@ class PlayPauseButton(ctk.CTkFrame):
         self._command = command
         self._enabled = True
         self._playing = False
+        self._busy_after = None
 
         super().__init__(master, width=size, height=size, corner_radius=size // 2,
                          fg_color=self._fill, **kwargs)
@@ -44,9 +47,10 @@ class PlayPauseButton(ctk.CTkFrame):
         self.grid_propagate(False)
 
         family, self._play_glyph, self._pause_glyph = _pick_icons()
+        self._icon_font = (family, max(9, int(size * 0.38)))
+        self._busy_font = ("Segoe UI", max(7, int(size * 0.22)), "bold")
         self._label = ctk.CTkLabel(self, text=self._play_glyph, fg_color="transparent",
-                                   text_color=self._icon_color,
-                                   font=(family, max(10, int(size * 0.38))))
+                                   text_color=self._icon_color, font=self._icon_font)
         self._label.place(relx=0.5, rely=0.5, anchor="center")
 
         for w in (self, self._label):
@@ -61,7 +65,8 @@ class PlayPauseButton(ctk.CTkFrame):
     def set_playing(self, playing: bool):
         """Show the pause icon while playing, the play icon otherwise."""
         self._playing = playing
-        self._label.configure(text=self._pause_glyph if playing else self._play_glyph)
+        if self._busy_after is None:
+            self._label.configure(text=self._pause_glyph if playing else self._play_glyph)
 
     def set_enabled(self, enabled: bool):
         self._enabled = enabled
@@ -70,7 +75,24 @@ class PlayPauseButton(ctk.CTkFrame):
         self._label.configure(text_color=self._icon_color if enabled else self._icon_disabled,
                               cursor=cursor)
 
+    def set_busy(self, busy: bool):
+        """Animate dots and ignore clicks while work is in progress."""
+        if busy and self._busy_after is None:
+            self.set_enabled(False)
+            self._label.configure(font=self._busy_font)
+            self._animate(0)
+        elif not busy and self._busy_after is not None:
+            self.after_cancel(self._busy_after)
+            self._busy_after = None
+            self._label.configure(font=self._icon_font)
+            self.set_enabled(True)
+            self.set_playing(self._playing)
+
     # ── events ────────────────────────────────────────────────────────────────
+
+    def _animate(self, i: int):
+        self._label.configure(text=_BUSY_FRAMES[i % len(_BUSY_FRAMES)])
+        self._busy_after = self.after(350, lambda: self._animate(i + 1))
 
     def _on_click(self, _event=None):
         if self._enabled and self._command:

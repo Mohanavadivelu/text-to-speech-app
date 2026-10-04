@@ -1,13 +1,37 @@
+import re
 import customtkinter as ctk
-from ui.theme import C, FONT_SUBLABEL, FONT_TINY, FONT_SMALL, FONT_LABEL
-from core.voices import VOICES, LANG_FLAGS
+from ui.theme import C, FONT_SUBLABEL, FONT_TINY, FONT_SMALL, FONT_NORMAL
+from ui.components.icons import icon
+from ui.components.play_button import PlayPauseButton
+from core.voices import VOICES, DEFAULT_LANGUAGE, default_voice
+from core import settings as app_settings
+
+SPEED_DEFAULT, PITCH_DEFAULT, BLEND_DEFAULT = 1.0, 0.0, 0.5
+_NO_MIX = "None"
+
+_INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_RESERVED = {"CON", "PRN", "AUX", "NUL",
+             *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def sanitize_filename(name: str) -> str:
+    """Strip characters Windows forbids in file names; neutralise reserved names.
+
+    Removing slashes and colons also stops names from pointing outside the
+    app folder (e.g. "../x" or "C:x").
+    """
+    name = _INVALID_CHARS.sub("", name).strip().rstrip(". ")
+    name = name.lstrip(".")
+    if name.upper().split(".")[0] in _RESERVED:
+        name = f"_{name}"
+    return name[:120]
 
 
 class SettingsPanel(ctk.CTkFrame):
-    """Right panel: voice settings, speed, pitch, output filename."""
+    """Right panel: language, voice, voice mix, speed, pitch, output filename."""
 
     def __init__(self, parent, on_language_change=None, on_voice_change=None,
-                 on_voice_preview=None, **kwargs):
+                 on_voice_preview=None, on_change=None, **kwargs):
         super().__init__(parent, fg_color=C["surface"],
                          border_color=C["border"], border_width=1,
                          corner_radius=12, width=300, **kwargs)
@@ -15,200 +39,343 @@ class SettingsPanel(ctk.CTkFrame):
         self._on_language_change = on_language_change
         self._on_voice_change = on_voice_change
         self._on_voice_preview = on_voice_preview
+        self._on_change = on_change
+        self._voice_map: dict = {}    # label -> voice_id for the current language
+        self._hint_after = None
         self._build()
+
+    # ── layout helpers ────────────────────────────────────────────────────────
+
+    def _section(self, parent, row, icon_name, title, value_text=None, pady=(0, 4)):
+        """Icon + caption row; returns the value label when *value_text* is given."""
+        hdr = ctk.CTkFrame(parent, fg_color=C["surface"])
+        hdr.grid(row=row, column=0, sticky="ew", pady=pady)
+        hdr.grid_columnconfigure(2, weight=1)
+        glyph, font = icon(icon_name, 11)
+        ctk.CTkLabel(hdr, text=glyph, font=font, text_color=C["text2"],
+                     width=16).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(hdr, text=title, font=FONT_TINY,
+                     text_color=C["text2"]).grid(row=0, column=1, sticky="w", padx=(6, 0))
+        if value_text is None:
+            return None
+        val = ctk.CTkLabel(hdr, text=value_text, font=FONT_SMALL, text_color=C["accent_h"])
+        val.grid(row=0, column=2, sticky="e")
+        return val
+
+    def _menu(self, parent, variable, command):
+        return ctk.CTkOptionMenu(
+            parent, variable=variable, values=[],
+            fg_color=C["surface2"], button_color=C["surface3"],
+            button_hover_color=C["border2"], text_color=C["text"],
+            dropdown_fg_color=C["surface2"], dropdown_hover_color=C["surface3"],
+            dropdown_text_color=C["text"], corner_radius=8, height=32,
+            font=FONT_NORMAL, dropdown_font=FONT_NORMAL,
+            dynamic_resizing=False, command=command,
+        )
+
+    def _slider(self, parent, frm, to, steps, variable, command):
+        return ctk.CTkSlider(
+            parent, from_=frm, to=to, number_of_steps=steps, variable=variable,
+            fg_color=C["surface3"], progress_color=C["accent"],
+            button_color="#ffffff", button_hover_color=C["text"], command=command,
+        )
+
+    # ── build ─────────────────────────────────────────────────────────────────
 
     def _build(self):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
-        # ── Header row ────────────────────────────────────────────────────────
-        ctk.CTkLabel(self, text="🎛️  VOICE SETTINGS", font=FONT_SUBLABEL,
-                     text_color=C["text2"], fg_color=C["surface"],
-                     anchor="w").grid(row=0, column=0, sticky="ew",
-                                      padx=14, pady=(12, 8))
+        # Header
+        hdr = ctk.CTkFrame(self, fg_color=C["surface"])
+        hdr.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
+        glyph, font = icon("settings", 13)
+        ctk.CTkLabel(hdr, text=glyph, font=font, text_color=C["text2"]).pack(side="left")
+        ctk.CTkLabel(hdr, text="VOICE SETTINGS", font=FONT_SUBLABEL,
+                     text_color=C["text2"]).pack(side="left", padx=(8, 0))
 
         ctk.CTkFrame(self, fg_color=C["border"], height=1,
                      corner_radius=0).grid(row=1, column=0, sticky="ew")
 
-        # ── Scrollable body ───────────────────────────────────────────────────
-        body = ctk.CTkScrollableFrame(self, fg_color=C["surface"],
-                                      scrollbar_button_color=C["surface3"],
-                                      scrollbar_button_hover_color=C["border2"])
+        # Scrollable body; the scrollbar hides itself whenever everything fits
+        self._body = body = ctk.CTkScrollableFrame(
+            self, fg_color=C["surface"], scrollbar_button_color=C["surface3"],
+            scrollbar_button_hover_color=C["border2"])
         body.grid(row=2, column=0, sticky="nsew", padx=14, pady=10)
         body.grid_columnconfigure(0, weight=1)
+        body.bind("<Configure>", lambda _e: self._refresh_scrollbar(), add="+")
+        body._parent_canvas.bind("<Configure>", lambda _e: self._refresh_scrollbar(), add="+")
 
         r = 0
+        # Language
+        self._section(body, r, "language", "LANGUAGE"); r += 1
+        self.lang_var = ctk.StringVar(value=DEFAULT_LANGUAGE)
+        self.lang_menu = self._menu(body, self.lang_var, self._on_lang_selected)
+        self.lang_menu.configure(values=list(VOICES.keys()))
+        self.lang_menu.grid(row=r, column=0, sticky="ew", pady=(0, 14)); r += 1
 
-        # ── Language ──────────────────────────────────────────────────────────
-        ctk.CTkLabel(body, text="🌐  LANGUAGE", font=FONT_TINY,
-                     text_color=C["text2"]).grid(row=r, column=0, sticky="w", pady=(0, 4))
-        r += 1
-
-        self.lang_var = ctk.StringVar(value="American English")
-        lang_opts = [f"{LANG_FLAGS.get(k, '')} {k}" for k in VOICES.keys()]
-
-        self.lang_cb = ctk.CTkComboBox(
-            body, variable=self.lang_var, values=lang_opts,
-            fg_color=C["surface2"], border_color=C["border"],
-            button_color=C["surface3"], button_hover_color=C["border2"],
-            dropdown_fg_color=C["surface2"], dropdown_hover_color=C["surface3"],
-            text_color=C["text"], corner_radius=8, width=240,
-            command=self._on_lang_selected,
-        )
-        self.lang_cb.grid(row=r, column=0, sticky="ew", pady=(0, 14))
-        r += 1
-
-        # ── Voice ─────────────────────────────────────────────────────────────
-        ctk.CTkLabel(body, text="🎤  VOICE", font=FONT_TINY,
-                     text_color=C["text2"]).grid(row=r, column=0, sticky="w", pady=(0, 4))
-        r += 1
-
+        # Voice + preview
+        self._section(body, r, "voice", "VOICE"); r += 1
         voice_row = ctk.CTkFrame(body, fg_color=C["surface"])
-        voice_row.grid(row=r, column=0, sticky="ew", pady=(0, 14))
+        voice_row.grid(row=r, column=0, sticky="ew", pady=(0, 14)); r += 1
         voice_row.grid_columnconfigure(0, weight=1)
-
         self.voice_var = ctk.StringVar()
-        self.voice_cb = ctk.CTkComboBox(
-            voice_row, variable=self.voice_var, values=[],
-            fg_color=C["surface2"], border_color=C["border"],
-            button_color=C["surface3"], button_hover_color=C["border2"],
-            dropdown_fg_color=C["surface2"], dropdown_hover_color=C["surface3"],
-            text_color=C["text"], corner_radius=8, width=200,
-            command=self._on_voice_selected,
-        )
-        self.voice_cb.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-
-        self._preview_btn = ctk.CTkButton(
-            voice_row, text="▶", width=28,
-            fg_color=C["surface3"], hover_color=C["border2"],
-            text_color=C["text2"], corner_radius=6,
-            command=self._do_voice_preview,
-        )
+        self.voice_menu = self._menu(voice_row, self.voice_var, self._on_voice_selected)
+        self.voice_menu.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._preview_btn = PlayPauseButton(voice_row, size=32, command=self._do_voice_preview,
+                                            bg_color=C["surface"])
         self._preview_btn.grid(row=0, column=1)
-        r += 1
 
-        # ── Speed ─────────────────────────────────────────────────────────────
-        self.speed_var = ctk.DoubleVar(value=1.0)
+        # Voice mix
+        self._mix_val = self._section(body, r, "mix", "MIX WITH", value_text=""); r += 1
+        self.mix_var = ctk.StringVar(value=_NO_MIX)
+        self.mix_menu = self._menu(body, self.mix_var, self._on_mix_selected)
+        self.mix_menu.grid(row=r, column=0, sticky="ew", pady=(0, 6)); r += 1
+        self.blend_var = ctk.DoubleVar(value=BLEND_DEFAULT)
+        self._blend_slider = self._slider(body, 0.1, 0.9, 8, self.blend_var, self._on_blend_change)
+        self._blend_row = r
+        self._blend_slider.grid(row=r, column=0, sticky="ew", pady=(4, 14)); r += 1
+        self._bind_reset(self._blend_slider, self.blend_var, BLEND_DEFAULT, self._on_blend_change)
 
-        speed_hdr = ctk.CTkFrame(body, fg_color=C["surface"])
-        speed_hdr.grid(row=r, column=0, sticky="ew", pady=(0, 4))
-        speed_hdr.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(speed_hdr, text="⚡  SPEED", font=FONT_TINY,
-                     text_color=C["text2"], anchor="w").grid(row=0, column=0, sticky="w")
-        self._speed_val_label = ctk.CTkLabel(speed_hdr, text="1.0",
-                                             font=FONT_SMALL, text_color=C["accent_h"])
-        self._speed_val_label.grid(row=0, column=1, sticky="e")
-        r += 1
+        # Speed
+        self.speed_var = ctk.DoubleVar(value=SPEED_DEFAULT)
+        self._speed_val_label = self._section(body, r, "speed", "SPEED", value_text=""); r += 1
+        self._speed_slider = self._slider(body, 0.5, 2.0, 15, self.speed_var, self._on_speed_change)
+        self._speed_slider.grid(row=r, column=0, sticky="ew", pady=(0, 14)); r += 1
+        self._bind_reset(self._speed_slider, self.speed_var, SPEED_DEFAULT, self._on_speed_change)
 
-        self._speed_slider = ctk.CTkSlider(
-            body, from_=0.5, to=2.0, variable=self.speed_var,
-            fg_color=C["surface3"], progress_color=C["accent"],
-            button_color="#ffffff", button_hover_color=C["text"],
-            command=self._on_speed_change,
-        )
-        self._speed_slider.grid(row=r, column=0, sticky="ew", pady=(0, 14))
-        r += 1
+        # Pitch
+        self.pitch_var = ctk.DoubleVar(value=PITCH_DEFAULT)
+        self._pitch_val_label = self._section(body, r, "pitch", "PITCH", value_text=""); r += 1
+        self._pitch_slider = self._slider(body, -5, 5, 20, self.pitch_var, self._on_pitch_change)
+        self._pitch_slider.grid(row=r, column=0, sticky="ew", pady=(0, 4)); r += 1
+        self._bind_reset(self._pitch_slider, self.pitch_var, PITCH_DEFAULT, self._on_pitch_change)
 
-        # ── Pitch ─────────────────────────────────────────────────────────────
-        self.pitch_var = ctk.DoubleVar(value=0.0)
+        ctk.CTkLabel(body, text="Double-click a slider to reset it", font=FONT_TINY,
+                     text_color=C["text3"], anchor="w").grid(row=r, column=0, sticky="w",
+                                                              pady=(0, 10)); r += 1
 
-        pitch_hdr = ctk.CTkFrame(body, fg_color=C["surface"])
-        pitch_hdr.grid(row=r, column=0, sticky="ew", pady=(0, 4))
-        pitch_hdr.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(pitch_hdr, text="🎵  PITCH", font=FONT_TINY,
-                     text_color=C["text2"], anchor="w").grid(row=0, column=0, sticky="w")
-        self._pitch_val_label = ctk.CTkLabel(pitch_hdr, text="0.0",
-                                             font=FONT_SMALL, text_color=C["accent_h"])
-        self._pitch_val_label.grid(row=0, column=1, sticky="e")
-        r += 1
-
-        ctk.CTkSlider(
-            body, from_=-5, to=5, variable=self.pitch_var,
-            fg_color=C["surface3"], progress_color=C["accent"],
-            button_color="#ffffff", button_hover_color=C["text"],
-            command=self._on_pitch_change,
-        ).grid(row=r, column=0, sticky="ew", pady=(0, 14))
-        r += 1
-
-        # ── Divider ───────────────────────────────────────────────────────────
         ctk.CTkFrame(body, fg_color=C["border"], height=1,
-                     corner_radius=0).grid(row=r, column=0, sticky="ew", pady=(0, 12))
-        r += 1
+                     corner_radius=0).grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
 
-        # ── Output filename ───────────────────────────────────────────────────
-        ctk.CTkLabel(body, text="💾  OUTPUT FILE", font=FONT_TINY,
-                     text_color=C["text2"]).grid(row=r, column=0, sticky="w", pady=(0, 4))
-        r += 1
-
+        # Output filename
+        self._section(body, r, "output", "OUTPUT FILE"); r += 1
         self._output_entry = ctk.CTkEntry(
             body, placeholder_text="audio_output",
             fg_color=C["surface2"], border_color=C["border"],
-            text_color=C["text"], corner_radius=8,
+            text_color=C["text"], corner_radius=8, height=32, font=FONT_NORMAL,
         )
-        self._output_entry.insert(0, "audio_output")
-        self._output_entry.grid(row=r, column=0, sticky="ew", pady=(0, 4))
-        r += 1
+        self._output_entry.grid(row=r, column=0, sticky="ew", pady=(0, 4)); r += 1
+        self._output_entry.bind("<KeyRelease>", self._on_output_edited)
+        self._output_hint = ctk.CTkLabel(body, text=".wav will be appended automatically",
+                                         font=FONT_TINY, text_color=C["text3"], anchor="w")
+        self._output_hint.grid(row=r, column=0, sticky="w"); r += 1
 
-        ctk.CTkLabel(body, text=".wav will be appended automatically",
-                     font=FONT_TINY, text_color=C["text3"],
-                     anchor="w").grid(row=r, column=0, sticky="w")
-        r += 1
+        # Reset (pinned to the bottom of the panel)
+        self._reset_btn = ctk.CTkButton(
+            self, text="Reset to defaults", font=FONT_SMALL,
+            fg_color="transparent", hover_color=C["surface3"], text_color=C["text2"],
+            border_color=C["border2"], border_width=1, corner_radius=8, height=30,
+            command=self.reset_to_defaults,
+        )
+        self._reset_btn.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
 
-    # ── callbacks ──────────────────────────────────────────────────────────────
+        self._on_speed_change(SPEED_DEFAULT, notify=False)
+        self._on_pitch_change(PITCH_DEFAULT, notify=False)
+        self._on_blend_change(BLEND_DEFAULT, notify=False)
+
+    # ── behaviour helpers ─────────────────────────────────────────────────────
+
+    def _bind_reset(self, slider, var, default, handler):
+        def _reset(_e=None):
+            # Run after the slider's own click handling, which moves the knob.
+            self.after_idle(lambda: (var.set(default), handler(default)))
+        slider.bind("<Double-Button-1>", _reset, add="+")
+
+    def _refresh_scrollbar(self):
+        canvas, bar = self._body._parent_canvas, self._body._scrollbar
+        try:
+            fits = canvas.yview() == (0.0, 1.0)
+        except Exception:
+            return
+        if fits and bar.winfo_ismapped():
+            bar.grid_remove()
+        elif not fits and not bar.winfo_ismapped():
+            bar.grid()
+
+    def _notify(self):
+        if self._on_change:
+            self._on_change()
+
+    def _show_hint(self, text, colour, revert_ms=None):
+        if self._hint_after:
+            self.after_cancel(self._hint_after)
+            self._hint_after = None
+        self._output_hint.configure(text=text, text_color=colour)
+        if revert_ms:
+            self._hint_after = self.after(revert_ms, lambda: self._show_hint(
+                ".wav will be appended automatically", C["text3"]))
+
+    def _rebuild_mix_menu(self):
+        """Mix candidates are the language's voices except the selected one."""
+        current = self.get_voice_id()
+        labels = [lbl for lbl, vid in self._voice_map.items() if vid != current]
+        self.mix_menu.configure(values=[_NO_MIX] + labels)
+        if self.mix_var.get() not in labels:
+            self.mix_var.set(_NO_MIX)
+        self._update_mix_visibility()
+
+    def _update_mix_visibility(self):
+        mixing = self.mix_var.get() != _NO_MIX
+        if mixing:
+            self._blend_slider.grid()
+        else:
+            self._blend_slider.grid_remove()
+        self._on_blend_change(self.blend_var.get(), notify=False)
+        self.after_idle(self._refresh_scrollbar)
+
+    # ── callbacks ─────────────────────────────────────────────────────────────
 
     def _on_lang_selected(self, value):
-        key = value.split(" ", 1)[-1] if " " in value else value
+        self.update_voice_list(value, VOICES.get(value, []))
         if self._on_language_change:
-            self._on_language_change(key)
+            self._on_language_change(value)
+        self._notify()
 
     def _on_voice_selected(self, value):
+        self._rebuild_mix_menu()
         if self._on_voice_change:
             self._on_voice_change(value)
+        self._notify()
+
+    def _on_mix_selected(self, _value):
+        self._update_mix_visibility()
+        self._notify()
 
     def _do_voice_preview(self):
         if self._on_voice_preview:
             self._on_voice_preview()
 
-    def _on_speed_change(self, value):
-        self._speed_val_label.configure(text=f"{value:.1f}")
+    def _on_speed_change(self, value, notify=True):
+        self._speed_val_label.configure(text=f"{float(value):.1f}×")
+        if notify:
+            self._notify()
 
-    def _on_pitch_change(self, value):
-        sign = "+" if value > 0 else ""
-        self._pitch_val_label.configure(text=f"{sign}{value:.1f}")
+    def _on_pitch_change(self, value, notify=True):
+        v = round(float(value) * 2) / 2
+        self._pitch_val_label.configure(text="0 st" if v == 0 else f"{v:+.1f} st")
+        if notify:
+            self._notify()
 
-    # ── public API ─────────────────────────────────────────────────────────────
+    def _on_blend_change(self, value, notify=True):
+        if self.mix_var.get() == _NO_MIX:
+            self._mix_val.configure(text="")
+        else:
+            other = self.mix_var.get().split(" · ")[0]
+            self._mix_val.configure(text=f"{round(float(value) * 100)}% {other}")
+        if notify:
+            self._notify()
 
-    def update_voice_list(self, lang_key: str, voices: list):
-        # Store (voice_id, label) pairs for accurate lookup
+    def _on_output_edited(self, _event=None):
+        raw = self._output_entry.get()
+        clean = sanitize_filename(raw)
+        if clean != raw.strip() and raw.strip():
+            pos = self._output_entry.index("insert")
+            self._output_entry.delete(0, "end")
+            self._output_entry.insert(0, clean)
+            self._output_entry.icursor(min(pos, len(clean)))
+            self._show_hint('Removed characters not allowed in file names', C["status_busy"],
+                            revert_ms=2500)
+        self._notify()
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def update_voice_list(self, lang_key: str, voices: list, selected: str = None):
+        """Fill the voice menu for *lang_key*; select *selected* (a voice id) if present."""
+        self.lang_var.set(lang_key)
         self._voice_map = {label: vid for vid, label in voices}
-        labels = [label for _, label in voices]
-        self.voice_cb.configure(values=labels)
-        if labels:
-            self.voice_cb.set(labels[0])
+        labels = list(self._voice_map)
+        self.voice_menu.configure(values=labels)
+        by_id = {vid: label for label, vid in self._voice_map.items()}
+        self.voice_var.set(by_id.get(selected) or (labels[0] if labels else ""))
+        self._rebuild_mix_menu()
+
+    def set_preview_state(self, state: str):
+        """'idle' | 'busy' (generating) | 'playing' (click stops)."""
+        self._preview_btn.set_busy(state == "busy")
+        self._preview_btn.set_playing(state == "playing")
 
     def update_output_info(self, filename: str, meta: str):
         """No-op — Last Output card removed; kept for API compatibility."""
-        pass
 
     def get_language_key(self) -> str:
-        val = self.lang_var.get()
-        return val.split(" ", 1)[-1] if " " in val else val
+        return self.lang_var.get()
 
     def get_voice_label(self) -> str:
         return self.voice_var.get()
 
     def get_voice_id(self) -> str:
-        """Return the voice_id for the currently selected voice label."""
-        label = self.voice_var.get()
-        return getattr(self, "_voice_map", {}).get(label, "af_heart")
+        return self._voice_map.get(self.voice_var.get(), default_voice(self.get_language_key()))
+
+    def get_blend(self):
+        """Return (blend_voice_id or None, ratio)."""
+        label = self.mix_var.get()
+        if label == _NO_MIX:
+            return None, 0.0
+        return self._voice_map.get(label), round(self.blend_var.get(), 2)
 
     def get_speed(self) -> float:
         return round(self.speed_var.get(), 1)
 
     def get_pitch(self) -> float:
-        return round(self.pitch_var.get(), 1)
+        return round(self.pitch_var.get() * 2) / 2
 
     def get_output_filename(self) -> str:
-        """Return the user-specified output filename (without extension)."""
-        name = self._output_entry.get().strip()
-        return name if name else "audio_output"
+        """Return the sanitized output filename (without extension)."""
+        return sanitize_filename(self._output_entry.get()) or "audio_output"
+
+    def get_state(self) -> dict:
+        blend_voice, ratio = self.get_blend()
+        return {
+            "language": self.get_language_key(),
+            "voice": self.get_voice_id(),
+            "blend_voice": blend_voice,
+            "blend_ratio": ratio if blend_voice else round(self.blend_var.get(), 2),
+            "speed": self.get_speed(),
+            "pitch": self.get_pitch(),
+            "output_name": self.get_output_filename(),
+        }
+
+    def apply_state(self, state: dict):
+        """Restore a saved state; unknown languages or voices fall back to defaults."""
+        lang = state.get("language")
+        if lang not in VOICES:
+            lang = DEFAULT_LANGUAGE
+        self.update_voice_list(lang, VOICES[lang], selected=state.get("voice"))
+        by_id = {vid: label for label, vid in self._voice_map.items()}
+        blend_label = by_id.get(state.get("blend_voice"))
+        self.mix_var.set(blend_label if blend_label and blend_label != self.voice_var.get()
+                         else _NO_MIX)
+
+        def _num(key, default, lo, hi):
+            try:
+                return min(hi, max(lo, float(state.get(key, default))))
+            except (TypeError, ValueError):
+                return default
+
+        self.blend_var.set(_num("blend_ratio", BLEND_DEFAULT, 0.1, 0.9))
+        self.speed_var.set(_num("speed", SPEED_DEFAULT, 0.5, 2.0))
+        self.pitch_var.set(_num("pitch", PITCH_DEFAULT, -5.0, 5.0))
+        self._on_speed_change(self.speed_var.get(), notify=False)
+        self._on_pitch_change(self.pitch_var.get(), notify=False)
+        self._update_mix_visibility()
+
+        self._output_entry.delete(0, "end")
+        self._output_entry.insert(0, sanitize_filename(str(state.get("output_name") or ""))
+                                  or "audio_output")
+
+    def reset_to_defaults(self):
+        self.apply_state(app_settings.DEFAULTS)
+        if self._on_language_change:
+            self._on_language_change(self.get_language_key())
+        self._notify()

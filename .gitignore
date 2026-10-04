@@ -34,3 +34,6 @@ desktop.ini
 .cache/
 
 release/
+# User settings (saved by the app)
+settings.json
+settings.json.tmp

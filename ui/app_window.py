@@ -15,7 +15,8 @@ from ui.components.toast import Toast
 
 from core.engine import TTSEngine, SAMPLE_RATE, log_device_info
 from core.player import AudioPlayer
-from core.voices import VOICES, LANG_CODES
+from core.voices import VOICES, LANG_CODES, PREVIEW_TEXT
+from core import settings as app_settings
 
 log = logging.getLogger(__name__)
 
@@ -38,13 +39,18 @@ class KokoroApp(ctk.CTk):
         self._player = AudioPlayer()
         self._player.on_progress = self._on_player_progress
         self._player.on_done = self._on_player_done
+        # Voice previews use their own player so they never replace generated audio
+        self._preview_player = AudioPlayer()
+        self._preview_player.on_done = lambda: self.after(0, self._on_preview_finished)
+        self._save_after = None
 
         self._audio_data = None
         self._audio_path = None
         self._generating = False
 
         self._build_ui()
-        self._update_voice_list("American English")
+        self._settings_panel.apply_state(app_settings.load())
+        self._update_voice_list(self._settings_panel.get_language_key())
         self._bind_shortcuts()
         # Clean shutdown when the window X button is clicked
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -86,6 +92,7 @@ class KokoroApp(ctk.CTk):
             on_language_change=self._update_voice_list,
             on_voice_change=self._on_voice_change,
             on_voice_preview=self._on_voice_preview,
+            on_change=self._schedule_settings_save,
         )
         self._settings_panel.grid(row=0, column=1, sticky="nsew")
         self._settings_panel.configure(width=300)
@@ -104,48 +111,73 @@ class KokoroApp(ctk.CTk):
     # ── Voice helpers ──────────────────────────────────────────────────────────
 
     def _update_voice_list(self, lang_key: str):
-        voices = VOICES.get(lang_key, [])
-        self._settings_panel.update_voice_list(lang_key, voices)
+        """Called after the language changes: fetch its voices for offline use."""
+        self._engine.prefetch_voices([vid for vid, _ in VOICES.get(lang_key, [])])
+
+    def _schedule_settings_save(self):
+        """Debounce saves so dragging a slider writes the file once."""
+        if self._save_after:
+            self.after_cancel(self._save_after)
+        self._save_after = self.after(600, self._save_settings)
+
+    def _save_settings(self):
+        self._save_after = None
+        app_settings.save(self._settings_panel.get_state())
 
     def _on_voice_change(self, _label: str):
         pass  # voice is read from the settings panel at generate time
 
     def _on_voice_preview(self):
-        """Generate and play a short sample with the currently selected voice."""
-        _PREVIEW_TEXT = "Hi there!! This is a test voice."
+        """Generate and play a short sample; clicking again while it plays stops it."""
+        if self._preview_player.is_playing:
+            self._preview_player.stop()
+            self._on_preview_finished()
+            return
         if self._generating:
             return
         self._generating = True
+        if self._player.is_playing:
+            self._player.pause()
+            self._player_bar.set_playing(False)
+        self._settings_panel.set_preview_state("busy")
         self._statusbar.set_status("Previewing voice…", "busy")
 
         lang_key  = self._settings_panel.get_language_key()
         lang_code = LANG_CODES.get(lang_key, "a")
         voice_id  = self._settings_panel.get_voice_id()
+        blend_voice, blend_ratio = self._settings_panel.get_blend()
         speed     = self._settings_panel.get_speed()
         pitch     = self._settings_panel.get_pitch()
+        text      = PREVIEW_TEXT.get(lang_key, PREVIEW_TEXT["American English"])
 
         def _worker():
             try:
                 audio, sr = self._engine.generate(
-                    _PREVIEW_TEXT, lang_code, voice_id, speed, pitch=pitch)
+                    text, lang_code, voice_id, speed, pitch=pitch,
+                    blend_voice=blend_voice, blend_ratio=blend_ratio)
                 self.after(0, lambda: self._on_preview_done(audio, sr))
             except Exception as exc:
                 log.exception("Preview failed: %s", exc)
-                self.after(0, lambda msg=str(exc): self._on_generate_error(msg))
+                self.after(0, lambda msg=str(exc): self._on_preview_error(msg))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_preview_done(self, audio, sr):
-        """Load preview audio into player and start playing immediately."""
+        """Play the preview on its own player; the main player keeps its audio."""
         self._generating = False
-        self._player.stop()
-        self._player.load(audio, sr)
-        self._player.play()
-        duration = len(audio) / sr
-        self._player_bar.set_audio_ready("preview", duration, sample_rate=sr)
-        self._player_bar.set_audio_data(audio, sr)
-        self._player_bar.set_playing(True)
+        self._preview_player.load(audio, sr)
+        self._preview_player.play()
+        self._settings_panel.set_preview_state("playing")
         self._statusbar.set_status("Playing preview…", "busy")
+
+    def _on_preview_finished(self):
+        self._settings_panel.set_preview_state("idle")
+        self._statusbar.set_status("Ready", "ok")
+
+    def _on_preview_error(self, msg: str):
+        self._generating = False
+        self._settings_panel.set_preview_state("idle")
+        self._on_generate_error(msg)
 
     # ── Generate ───────────────────────────────────────────────────────────────
 
@@ -165,6 +197,7 @@ class KokoroApp(ctk.CTk):
         lang_key    = self._settings_panel.get_language_key()
         lang_code   = LANG_CODES.get(lang_key, "a")
         voice_id    = self._settings_panel.get_voice_id()
+        blend       = self._settings_panel.get_blend()
         speed       = self._settings_panel.get_speed()
         pitch       = self._settings_panel.get_pitch()
         out_name    = self._settings_panel.get_output_filename()
@@ -172,11 +205,12 @@ class KokoroApp(ctk.CTk):
 
         threading.Thread(
             target=self._generate_worker,
-            args=(text, lang_code, voice_id, speed, pitch, output_path),
+            args=(text, lang_code, voice_id, speed, pitch, output_path, blend),
             daemon=True,
         ).start()
 
-    def _generate_worker(self, text, lang_code, voice_id, speed, pitch, output_path):
+    def _generate_worker(self, text, lang_code, voice_id, speed, pitch, output_path,
+                         blend=(None, 0.0)):
         try:
             first_chunk_played = threading.Event()
 
@@ -195,7 +229,7 @@ class KokoroApp(ctk.CTk):
             audio, sr = self._engine.generate(
                 text, lang_code, voice_id, speed,
                 pitch=pitch, on_status=on_status, on_progress=on_progress,
-                on_chunk=on_chunk,
+                on_chunk=on_chunk, blend_voice=blend[0], blend_ratio=blend[1],
             )
             self._engine.save(audio, sr, output_path)
             self.after(0, lambda: self._on_generate_done(audio, sr, output_path, voice_id))
@@ -248,6 +282,9 @@ class KokoroApp(ctk.CTk):
         # Allow playback if full audio is ready OR if a streaming chunk is loaded
         if self._audio_data is None and not self._player.has_audio:
             return
+        if self._preview_player.is_playing:
+            self._preview_player.stop()
+            self._on_preview_finished()
         self._player.play()
         self._statusbar.set_status("Playing…", "busy")
 
@@ -306,7 +343,11 @@ class KokoroApp(ctk.CTk):
         import sys
         import sounddevice as sd
         try:
-            # Stop audio playback and release the sounddevice stream
+            # Persist settings, then stop audio and release the sounddevice stream
+            if self._save_after:
+                self.after_cancel(self._save_after)
+            self._save_settings()
+            self._preview_player.stop()
             self._player.stop()
             sd.stop()
         except Exception:
