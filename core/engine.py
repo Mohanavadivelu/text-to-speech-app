@@ -120,44 +120,131 @@ def _pitch_shift(audio: np.ndarray, factor: float) -> np.ndarray:
     return np.interp(src, np.arange(len(audio)), audio).astype(np.float32)
 
 
+# Model repo on Hugging Face. v1.0 covers every language this app offers;
+# Kokoro-82M-v1.1-zh is a Chinese-focused variant and is not used here.
+REPO_ID = "hexgrad/Kokoro-82M"
+
+# English (a/b) uses misaki's own chunker. Every other language goes through
+# espeak, where kokoro only splits on . ! ? — so Hindi text ending in "।"
+# reached the model as one chunk and was cut at 510 phonemes. We pre-break
+# those languages into short lines, which kokoro treats as separate chunks.
+_ESPEAK_LINE_CHARS = 200
+_SENTENCE_END = re.compile(r"(?<=[.!?।॥…])\s+")
+_CLAUSE_END = re.compile(r"(?<=[,;:—])\s+")
+
+
+def _break_lines(text: str, max_chars: int = _ESPEAK_LINE_CHARS) -> str:
+    """Return *text* with newlines so no line exceeds *max_chars*."""
+    lines: list[str] = []
+
+    def _pack(parts, splitter):
+        cur = ""
+        for part in parts:
+            if len(part) > max_chars:
+                if cur:
+                    lines.append(cur)
+                    cur = ""
+                splitter(part)
+            elif not cur:
+                cur = part
+            elif len(cur) + 1 + len(part) <= max_chars:
+                cur = f"{cur} {part}"
+            else:
+                lines.append(cur)
+                cur = part
+        if cur:
+            lines.append(cur)
+
+    def _by_words(part):
+        _pack(part.split(), lambda w: lines.extend(
+            w[i:i + max_chars] for i in range(0, len(w), max_chars)))
+
+    def _by_clause(part):
+        _pack(_CLAUSE_END.split(part), _by_words)
+
+    for para in text.splitlines():
+        para = para.strip()
+        if para:
+            _pack(_SENTENCE_END.split(para), _by_clause)
+    return "\n".join(lines)
+
+
 class TTSEngine:
     def __init__(self):
-        self._pipeline = None
-        self._pipeline_lang = None
-        self._lock = threading.Lock()
-        self._aux_pipelines: list = []
-        self._aux_lock = threading.Lock()
+        self._model = None
+        self._model_lock = threading.Lock()
+        self._pipelines: dict = {}       # lang_code -> KPipeline (shares self._model)
+        self._aux_pipelines: dict = {}   # lang_code -> second KPipeline for CPU workers
+        self._lock = threading.Lock()      # serialises the main pipeline
+        self._aux_lock = threading.Lock()  # serialises the aux pipeline
 
-    # ── Pipeline management ───────────────────────────────────────────────────
+    # ── Model & pipeline management ───────────────────────────────────────────
+
+    def _get_model(self, on_status=None):
+        """Load the Kokoro model once; every language pipeline reuses it."""
+        with self._model_lock:
+            if self._model is None:
+                from kokoro import KModel
+                log.info("Loading %s on %s", REPO_ID, DEVICE)
+                if on_status:
+                    on_status(f"Loading model on {DEVICE.upper()}…")
+                self._model = KModel(repo_id=REPO_ID).to(DEVICE).eval()
+                log.info("Model ready on %s", DEVICE)
+            return self._model
+
+    def _make_pipeline(self, lang_code: str, on_status=None):
+        from kokoro import KPipeline
+        model = self._get_model(on_status)
+        return KPipeline(lang_code=lang_code, repo_id=REPO_ID, model=model, device=DEVICE)
 
     def _get_pipeline(self, lang_code: str, on_status=None):
-        from kokoro import KPipeline
-        if self._pipeline is None or self._pipeline_lang != lang_code:
-            log.info("Loading KPipeline for lang_code=%s on device=%s", lang_code, DEVICE)
-            if on_status:
-                on_status(f"Loading model on {DEVICE.upper()}…")
-            self._pipeline = KPipeline(lang_code=lang_code, device=DEVICE)
-            self._pipeline_lang = lang_code
-            self._aux_pipelines = []
-            log.info("KPipeline ready on %s", DEVICE)
-        return self._pipeline
+        if lang_code not in self._pipelines:
+            log.info("Creating %s pipeline (shared model)", lang_code)
+            self._pipelines[lang_code] = self._make_pipeline(lang_code, on_status)
+        return self._pipelines[lang_code]
 
     def _get_aux_pipeline(self, lang_code: str):
-        from kokoro import KPipeline
-        with self._aux_lock:
-            if len(self._aux_pipelines) < _MAX_WORKERS - 1:
-                log.info("Creating auxiliary KPipeline #%d on %s",
-                         len(self._aux_pipelines) + 1, DEVICE)
-                p = KPipeline(lang_code=lang_code, device=DEVICE)
-                self._aux_pipelines.append(p)
-                return p
-            idx = len(self._aux_pipelines) % max(1, len(self._aux_pipelines))
-            return self._aux_pipelines[idx]
+        with self._model_lock:
+            pipeline = self._aux_pipelines.get(lang_code)
+        if pipeline is None:
+            pipeline = self._make_pipeline(lang_code)
+            with self._model_lock:
+                pipeline = self._aux_pipelines.setdefault(lang_code, pipeline)
+        return pipeline
+
+    # ── Voices ────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_voice(pipeline, voice_id: str, blend_voice=None, blend_ratio: float = 0.5):
+        """Return a voice id, or a blended voice tensor when *blend_voice* is set.
+
+        *blend_ratio* is the share of *blend_voice* (0.0–1.0).
+        """
+        if not blend_voice or blend_voice == voice_id or blend_ratio <= 0:
+            return voice_id
+        ratio = min(1.0, float(blend_ratio))
+        a = pipeline.load_single_voice(voice_id)
+        b = pipeline.load_single_voice(blend_voice)
+        return ((1.0 - ratio) * a + ratio * b).float()
+
+    @staticmethod
+    def prefetch_voices(voice_ids):
+        """Download voice files in the background so later previews work offline."""
+        def _worker():
+            from huggingface_hub import hf_hub_download
+            for vid in voice_ids:
+                try:
+                    hf_hub_download(repo_id=REPO_ID, filename=f"voices/{vid}.pt")
+                except Exception as exc:  # offline or rate-limited: try again next time
+                    log.debug("Voice prefetch skipped for %s: %s", vid, exc)
+                    return
+            log.info("Prefetched %d voice(s)", len(voice_ids))
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ── Audio helpers ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _run_pipeline(pipeline, text: str, voice_id: str, speed: float,
+    def _run_pipeline(pipeline, text: str, voice, speed: float,
                       pitch: float = 0.0) -> np.ndarray:
         """Run pipeline with inference_mode for maximum speed (no gradient tracking).
 
@@ -167,7 +254,7 @@ class TTSEngine:
         factor = _pitch_factor(pitch)
         chunks = []
         with torch.inference_mode():
-            for _gs, _ps, audio in pipeline(text, voice=voice_id, speed=speed / factor):
+            for _gs, _ps, audio in pipeline(text, voice=voice, speed=speed / factor):
                 if hasattr(audio, "numpy"):
                     audio = audio.detach().cpu().numpy()
                 chunks.append(np.asarray(audio, dtype=np.float32))
@@ -180,7 +267,7 @@ class TTSEngine:
 
     def generate(self, text: str, lang_code: str, voice_id: str, speed: float,
                  pitch: float = 0.0, on_status=None, on_progress=None,
-                 on_chunk=None):
+                 on_chunk=None, blend_voice=None, blend_ratio: float = 0.5):
         """Generate audio for *text*.
 
         Returns (np.ndarray[float32], sample_rate).
@@ -189,14 +276,20 @@ class TTSEngine:
           on_status(msg: str)          — human-readable status string
           on_progress(pct: int)        — 0-99 during generation, 100 when done
           on_chunk(audio: np.ndarray)  — called with each completed segment
+
+        blend_voice / blend_ratio mix a second voice into *voice_id*.
         """
         with self._lock:
             pipeline = self._get_pipeline(lang_code, on_status=on_status)
+            voice = self._resolve_voice(pipeline, voice_id, blend_voice, blend_ratio)
 
         segments = _split_paragraphs(text)
+        if lang_code not in ("a", "b"):
+            segments = [_break_lines(seg) for seg in segments]
         total_segs = len(segments)
-        log.info("Generating %d segment(s) for %d chars, voice=%s speed=%s pitch=%+.1f device=%s",
-                 total_segs, len(text), voice_id, speed, pitch, DEVICE)
+        log.info("Generating %d segment(s) for %d chars, voice=%s blend=%s@%.2f speed=%s "
+                 "pitch=%+.1f device=%s", total_segs, len(text), voice_id, blend_voice,
+                 blend_ratio, speed, pitch, DEVICE)
 
         if on_status:
             on_status(f"Generating… 0 / {total_segs} segments [{DEVICE.upper()}]")
@@ -207,7 +300,7 @@ class TTSEngine:
             # ── Single-threaded path (GPU or single-core CPU) ─────────────────
             for i, seg in enumerate(segments):
                 with self._lock:
-                    audio = self._run_pipeline(pipeline, seg, voice_id, speed, pitch)
+                    audio = self._run_pipeline(pipeline, seg, voice, speed, pitch)
                 all_chunks[i] = audio
                 if on_chunk:
                     on_chunk(audio)
@@ -232,11 +325,11 @@ class TTSEngine:
                 nonlocal done_count
                 if idx % 2 == 0:
                     with self._lock:
-                        audio = self._run_pipeline(pipeline, seg, voice_id, speed, pitch)
+                        audio = self._run_pipeline(pipeline, seg, voice, speed, pitch)
                 else:
                     aux = self._get_aux_pipeline(lang_code)
                     with self._aux_lock:
-                        audio = self._run_pipeline(aux, seg, voice_id, speed, pitch)
+                        audio = self._run_pipeline(aux, seg, voice, speed, pitch)
                 return idx, audio
 
             with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
